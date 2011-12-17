@@ -1,0 +1,1 @@
+local H, C, L = unpack(select(2,...))-- list of dispellable debuff displayed but not triggering dispel highlight, dispel sound, ...C["dispellable"] = {	-- Zul Gurub	96326, -- Burning Blood	96325, -- Frostburn Formula	91911, -- Frostburn Formula	96328, -- Toxic Torment	-- Misc	91889, -- Thunderclap	91291, -- Drain Life}

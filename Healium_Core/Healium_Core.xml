@@ -1,0 +1,37 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script file="init.lua"/>
+
+	<Script file="private.lua"/>
+
+	<Script file="constants.lua"/>
+
+	<Script file="locales\english.lua"/>
+	<Script file="locales\french.lua"/>
+
+	<Script file="debug\PerformanceCounter.lua"/>
+
+	<Script file="config\config.lua"/>
+	<Script file="config\classes\deathknight.lua"/>
+	<Script file="config\classes\druid.lua"/>
+	<Script file="config\classes\hunter.lua"/>
+	<Script file="config\classes\mage.lua"/>
+	<Script file="config\classes\monk.lua"/>
+	<Script file="config\classes\paladin.lua"/>
+	<Script file="config\classes\priest.lua"/>
+	<Script file="config\classes\rogue.lua"/>
+	<Script file="config\classes\shaman.lua"/>
+	<Script file="config\classes\warlock.lua"/>
+	<Script file="config\classes\warrior.lua"/>
+	<Script file="config\filters\blacklist.lua"/>
+	<Script file="config\filters\whitelist.lua"/>
+	<Script file="config\filters\dispellable.lua"/>
+	<Script file="config\profiles.lua"/>
+
+	<Script file="flashframe.lua"/>
+	<Script file="unitframes.lua"/>
+	<Script file="core.lua"/>
+
+	<Script file="test\test.lua"/>
+
+	<Script file="finalize.lua"/>
+</Ui>
