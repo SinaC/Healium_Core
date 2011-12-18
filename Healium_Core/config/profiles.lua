@@ -109,7 +109,7 @@ if H.myname == "Holycrap" then
 	C["PRIEST"][2].spells = {
 		{ id =  1 }, -- Power Word: Shield
 		{ id =  2 }, -- Renew
-		{ id =  7  }, -- Heal
+		{ id =  7 }, -- Heal
 		{ id = 12 }, -- Prayer of Mending
 		{ id =  9 }, -- Flash Heal
 		{ id =  8 }, -- Greater Heal

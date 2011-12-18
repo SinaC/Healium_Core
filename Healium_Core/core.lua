@@ -177,7 +177,6 @@ function H:RegisterStyle(styleName, style)
 	-- assert(style.CreateButton, "CreateButton missing in style "..styleName) -- TODO: localization
 	-- assert(style.CreateDebuff, "CreateDebuff missing in style "..styleName) -- TODO: localization
 	-- assert(style.CreateBuff, "CreateBuff missing in style "..styleName) -- TODO: localization
-
 	Styles[styleName] = style
 end
 
@@ -254,7 +253,10 @@ local function ForEachUnitframe(fct, ...)
 	if not Unitframes then return end
 	for _, frame in ipairs(Unitframes) do
 		if frame and frame.unit ~= nil and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+--print("ForEachUnitframe: VISIBLE "..tostring(frame:GetName()))
 			fct(frame, ...)
+--		else
+--print("ForEachUnitframe: INVISIBLE "..tostring(frame:GetName()).."  "..tostring(frame.unit).."  "..tostring(frame:GetParent():IsShown()))
 		end
 	end
 end
@@ -733,7 +735,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 		local buffIndex = 1
 		for i = 1, 40, 1 do
 			-- get buff, don't filter on PLAYER because we need a full list of buff to check prereq
-			local filter = (not SpecSettings.hasBuffPrereq and not SpecSettings.buffs) and "PLAYER|CANCELLABLE" or "CANCELLABLE" -- RAID cannot be used because Prayer of Mending buff is tagged as selfbuff :/
+			local filter = (SpecSettings and not SpecSettings.hasBuffPrereq and not SpecSettings.buffs) and "PLAYER|CANCELLABLE" or "CANCELLABLE" -- RAID cannot be used because Prayer of Mending buff is tagged as selfbuff :/
 			local name, _, icon, count, _, duration, expirationTime, unitCaster, _, _, spellID = UnitBuff(unit, i, filter)
 			if not name then break end
 			if not ListBuffs[i] then ListBuffs[i] = {} end
@@ -1243,6 +1245,7 @@ local function UpdateFrameButtonsAttributes(frame)
 	GlowingSpells = {} -- reset Glow
 	for i, button in ipairs(frame.hButtons) do
 		local buttonHeader = ButtonHeaders[i]
+--print("UpdateFrameButtonsAttributes:"..tostring(frame:GetName()).."  "..tostring(i).."  "..tostring(buttonHeader and buttonHeader.hInitialized or ""))
 		if buttonHeader and buttonHeader.hInitialized == true then
 			if buttonHeader.hInvalid == true then
 				button.hHeaderIndex = nil
@@ -1269,6 +1272,7 @@ end
 
 -- Fill button header with spellID, spellName, macroName, OOM, ...
 local function UpdateButtonHeaders()
+--print("UpdateButtonHeaders")
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonHeaders")
 	for index = 1, C.general.maxButtonCount, 1 do
 		if not ButtonHeaders[index] then ButtonHeaders[index] = {} end
@@ -1885,7 +1889,7 @@ end
 -------------------------------------------------------
 --local delays = {}
 local function OnEvent(self, event, arg1, arg2, arg3)
-	--print(1000,"Event: "..event.."  "..tostring(arg1).."  "..tostring(arg2).."  "..tostring(arg3))
+	--print("Event: "..event.."  "..tostring(arg1).."  "..tostring(arg2).."  "..tostring(arg3))
 	--PerformanceCounter:Increment(ADDON_NAME, event)
 	-- local currentTime = GetTime()
 	-- if delays[event] then
@@ -1907,23 +1911,23 @@ local function OnEvent(self, event, arg1, arg2, arg3)
 	-- else
 		-- delays[event] = currentTime
 	-- end
-
 	if event == "PLAYER_ENTERING_WORLD" then
+		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 		ResetSpecSettings()
 		GetSpecSettings()
 		CheckSpellSettings()
 		UpdateButtonHeaders()
-		ForEachUnitframe(UpdateFrameButtonsAttributes)
-		ForEachUnitframe(UpdateFrameDebuffsPosition)
-		ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+		ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+		ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+		--ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 		UpdateTransforms()
 		UpdateCooldowns()
 	elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
 		-- TODO: event is fired once by member -> optimize
 		--if GetNumPartyMembers() == 0 then -- only first fired event
 			--GetSpecSettings()
-			ForEachUnitframe(UpdateFrameButtonsAttributes)
-			ForEachUnitframe(UpdateFrameDebuffsPosition)
+			ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+			ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 			ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 			UpdateTransforms()
 			UpdateCooldowns()
@@ -1972,8 +1976,8 @@ local function OnEvent(self, event, arg1, arg2, arg3)
 		GetSpecSettings()
 		CheckSpellSettings()
 		UpdateButtonHeaders()
-		ForEachUnitframe(UpdateFrameButtonsAttributes)
-		ForEachUnitframe(UpdateFrameDebuffsPosition)
+		ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+		ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 		ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 		UpdateTransforms()
 		UpdateCooldowns()
@@ -2056,6 +2060,7 @@ function H:Initialize(config)
 	-- Create event handler
 	local eventsHandler = CreateFrame("Frame")
 	eventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+	eventsHandler:RegisterEvent("PLAYER_ALIVE")
 	eventsHandler:RegisterEvent("PLAYER_ENTERING_WORLD")
 	eventsHandler:RegisterEvent("RAID_ROSTER_UPDATE")
 	eventsHandler:RegisterEvent("PARTY_MEMBERS_CHANGED")
