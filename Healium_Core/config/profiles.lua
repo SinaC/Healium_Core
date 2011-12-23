@@ -10,8 +10,11 @@ if H.myname == "Meuhhnon" then
 	C["DRUID"][3].spells[6] = { macroName = "NSHT" } -- Nature Swiftness + Healing Touch
 	C["DRUID"][3].spells[9] = { macroName = "NSBR" } -- Nature Swiftness + Rebirth
 
-	-- -- TEST
-	-- C["DRUID"][3].buffs = { 33076 } -- Prayer of mending
+	-- TEST
+	--C["DRUID"][3].buffs = { 33076 } -- Prayer of mending
+	--C["DRUID"][3].buffs = { 1126 } -- Mark of the Wild
+	-- TEST
+
 
 	-- remove Weakened soul from blacklist(6788)
 	if C["blacklist"] then
@@ -41,6 +44,9 @@ if H.myname == "Yoog" then
 	C["general"].debugDebuff = "Curse"
 
 	--C["SHAMAN"][3].spells = nil
+	-- if C["blacklist"] then
+		-- Private.TRemoveByVal(C["blacklist"], 6788)
+	-- end
 
 	C["general"].showPriorityDebuff = true
 	C["SHAMAN"][1] = {}

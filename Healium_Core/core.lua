@@ -1,5 +1,5 @@
 -------------------------------------------------------
--- Healium components
+-- Healium
 -------------------------------------------------------
 
 -- Exported functions
@@ -60,6 +60,7 @@ local UpdateDelay = 0.2
 local HealiumInitialized = false
 local SpecSettings = nil
 local ButtonHeaders = {} -- List of header for button, store hSpellID, hSpellName, hMacroName, hOOM, hInvalid, ...
+local EventsHandler = CreateFrame("Frame")
 
 -- Fields added to unitframe
 --		hStyle: style name
@@ -178,6 +179,31 @@ function H:RegisterStyle(styleName, style)
 	-- assert(style.CreateDebuff, "CreateDebuff missing in style "..styleName) -- TODO: localization
 	-- assert(style.CreateBuff, "CreateBuff missing in style "..styleName) -- TODO: localization
 	Styles[styleName] = style
+end
+
+-------------------------------------------------------
+-- GUID <-> unit
+-------------------------------------------------------
+local Units = {}
+local UnitByGUID = {}
+local function GetUnitByGUID(GUID)
+	return UnitByGUID[GUID]
+end
+
+local function RegisterUnit(unit)
+	table.insert(Units, unit)
+end
+
+local function UpdateUnitByGUID()
+--print("UpdateUnitByGUID")
+	UnitByGUID = {} -- TODO: GC-friendly
+	for _, unit in ipairs(Units) do
+		local GUID = UnitGUID(unit)
+		if GUID then
+--print("UpdateUnitByGUID: "..tostring(unit).."->"..tostring(GUID))
+			UnitByGUID[GUID] = unit
+		end
+	end
 end
 
 -------------------------------------------------------
@@ -399,6 +425,13 @@ local function InitializeSettings()
 		C.dispellable = CreateFilterList(C.dispellable) -- "dispellable filter"
 	end
 
+	-- -- Add spellName to shields
+	-- if C.shields then
+		-- for spellID, shieldInfo in pairs(C.shields) do
+			-- shieldInfo.spellName = GetSpellInfo(spellID)
+		-- end
+	-- end
+
 	-- Add spellName/spellIcon to spell/transform/buff list and copy predefined spells
 	if C[H.myclass] then
 		for specIndex, specSetting in pairs(C[H.myclass]) do
@@ -555,9 +588,21 @@ local function RemoveGlowingSpell(spellID)
 end
 
 -------------------------------------------------------
+-- Shields
+-------------------------------------------------------
+local function IsValidZoneForShields()
+	SetMapToCurrentZone()
+	local zone = GetCurrentMapAreaID()
+	for _, shieldInfo in pairs(C["shields"]) do
+		if not shieldInfo.map then return true end
+		if shieldInfo.map and shieldInfo.map == zone then return true end
+	end
+	return false
+end
+
+-------------------------------------------------------
 -- Healium buttons/buff/debuffs update
 -------------------------------------------------------
-
 -- Show button glow
 local function ShowButtonGlow(frame, button)
 	ActionButton_ShowOverlayGlow(button)
@@ -569,10 +614,11 @@ local function HideButtonGlow(frame, button)
 end
 
 -- Update buff icon, id, unit, ...
-local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime)
+local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime, spellID)
 	-- id, unit: used by tooltip
 	buff:SetID(id)
 	buff.unit = unit
+	buff.spellID = spellID
 	-- texture
 	if buff.icon then
 		buff.icon:SetTexture(icon)
@@ -586,6 +632,15 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime)
 			buff.count:Hide()
 		end
 	end
+	-- -- shield
+	-- if buff.shield then
+		-- if buff.shieldAmount and buff.shieldAmount > 0 then
+			-- buff.shield:SetText(buff.shieldAmount)
+			-- buff.shield:Show()
+		-- else
+			-- buff.shield:Hide()
+		-- end
+	-- end
 	-- cooldown
 	if buff.cooldown then
 		if duration and duration > 0 then
@@ -600,10 +655,11 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime)
 end
 
 -- Update debuff icon, id, unit, ...
-local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationTime, debuffType)
+local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationTime, debuffType, spellID)
 	-- id, unit: used by tooltip
 	debuff:SetID(id)
 	debuff.unit = unit
+	debuff.spellID = spellID
 	-- texture
 	if debuff.icon then
 		debuff.icon:SetTexture(icon)
@@ -617,6 +673,15 @@ local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationT
 			debuff.count:Hide()
 		end
 	end
+	-- -- shield
+	-- if debuff.shield then
+		-- if debuff.shieldAmount and debuff.shieldAmount > 0 then
+			-- debuff.shield:SetText(debuff.shieldAmount)
+			-- debuff.shield:Show()
+		-- else
+			-- debuff.shield:Hide()
+		-- end
+	-- end
 	-- cooldown
 	if debuff.cooldown then
 		if duration and duration > 0 then
@@ -777,7 +842,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if not filtered then
 					-- buff displayed
 					local buff = frame.hBuffs[buffIndex]
-					UpdateBuff(buff, i, unit, icon, count, duration, expirationTime)
+					UpdateBuff(buff, i, unit, icon, count, duration, expirationTime, spellID)
 					-- next buff
 					buffIndex = buffIndex + 1
 				end
@@ -860,13 +925,13 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if frame.hDebuffs and debuffIndex <= C.general.maxDebuffCount then
 					-- set normal debuff
 					local debuff = frame.hDebuffs[debuffIndex]
-					UpdateDebuff(debuff, i, unit, icon, count, duration, expirationTime, debuffType)
+					UpdateDebuff(debuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
 					-- next debuff
 					debuffIndex = debuffIndex + 1
 				end
 				if frame.hPriorityDebuff and debuffPriority <= frame.hPriorityDebuff.priority then
 					-- set priority debuff if any
-					UpdateDebuff(frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType)
+					UpdateDebuff(frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
 					frame.hPriorityDebuff.priority = debuffPriority
 				end
 			end
@@ -1143,7 +1208,6 @@ local function UpdateOORSpells()
 	end
 end
 
-
 -- For each spell, if transform setting exists, change icon according buff affected 'player'
 local function UpdateTransforms()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateTransforms")
@@ -1210,6 +1274,80 @@ local function UpdateTransforms()
 		end
 	end
 	--PerformanceCounter:Stop(ADDON_NAME, "UpdateTransforms")
+end
+
+-- Apply/Update/Remove Shields
+local function UpdateFrameApplyShield(frame, spellID, shieldInfo)
+--print("UpdateFrameApplyShield")
+	if shieldInfo.type == "BUFF" then
+		for _, buff in ipairs(frame.hBuffs) do
+			if buff.spellID == spellID then
+				buff.shieldAmount = shieldInfo.amount or 0
+				buff.shield:SetText(buff.shieldAmount)
+				buff.shield:Show()
+			end
+		end
+	elseif shieldInfo.type == "DEBUFF" then
+		for _, debuff in ipairs(frame.hDebuffs) do
+			if debuff.spellID == spellID then
+				debuff.shieldAmount = shieldInfo.amount or 0
+				debuff.shield:SetText(debuff.shieldAmount)
+				debuff.shield:Show()
+			end
+		end
+	end
+end
+local function UpdateFrameRemoveShield(frame, spellID)
+	-- if no spellID, remove every shields
+	for _, buff in ipairs(frame.hBuffs) do
+		if not spellID or buff.spellID == spellID then
+			buff.shieldAmount = nil
+			buff.shield:Hide()
+		end
+	end
+	for _, debuff in ipairs(frame.hDebuffs) do
+		if not spellID or debuff.spellID == spellID then
+			debuff.shieldAmount = nil
+			debuff.shield:Hide()
+		end
+	end
+end
+local function UpdateFrameUpdateShield(frame, amount, type)
+	for spellID, shieldInfo in pairs(C["shields"]) do
+		if shieldInfo.type == "BUFF" and shieldInfo.modifier == type then
+			for _, buff in ipairs(frame.hBuffs) do
+				if buff.spellID == spellID then
+					if shieldInfo.amount then
+						buff.shieldAmount = math.max((buff.shieldAmount or shieldInfo.amount) - amount, 0) -- decreasing
+					else
+						buff.shieldAmount = (buff.shieldAmount or 0) + amount -- increasing
+					end
+					if buff.shieldAmount > 0 then
+						buff.shield:SetText(buff.shieldAmount)
+						buff.shield:Show()
+					else
+						buff.shield:Hide()
+					end
+				end
+			end
+		elseif shieldInfo.type == "DEBUFF" and shieldInfo.modifier == type then
+			for _, debuff in ipairs(frame.hDebuffs) do
+				if debuff.spellID == spellID then
+					if shieldInfo.amount then
+						debuff.shieldAmount = math.max((debuff.shieldAmount or shieldInfo.amount) - amount, 0) -- decreasing
+					else
+						debuff.shieldAmount = (debuff.shieldAmount or 0) + amount -- increasing
+					end
+					if debuff.shieldAmount > 0 then
+						debuff.shield:SetText(debuff.shieldAmount)
+						debuff.shield:Show()
+					else
+						debuff.shield:Hide()
+					end
+				end
+			end
+		end
+	end
 end
 
 -- Update healium frame debuff position, debuff must be anchored to last shown button
@@ -1330,192 +1468,6 @@ end
 -- Healium buttons/buff/debuffs creation
 -------------------------------------------------------
 local DelayedButtonsCreation = {}
---[[
--- Create heal buttons for a frame
-local function CreateHealiumButtons(frame)
-	if frame.hButtons then return end
-	local style = Styles[frame.hStyle]
-
-	if InCombatLockdown() then
-		tinsert(DelayedButtonsCreation, frame)
-		self:RegisterEvent("PLAYER_REGEN_ENABLED")
-		return
-	end
-
-	frame.hButtons = {}
-	local buttonSize = style.buttonSize or frame:GetHeight()
-	--local buttonSpacing = C.general.buttonSpacing or 2
-	local buttonSpacing = style.buttonSpacing or 2
-	for i = 1, C.general.maxButtonCount, 1 do
-		-- name
-		local buttonName = frame:GetName().."_HealiumButton_"..i
-		-- anchor
-		local anchor
-		if style.GetButtonAnchor then
-			anchor = style.GetButtonAnchor(frame, frame.hButtons, i)
-		else
-			if i == 1 then
-				anchor = {"TOPLEFT", frame, "TOPRIGHT", buttonSpacing, 0}
-			else
-				anchor = {"TOPLEFT", frame.hButtons[i-1], "TOPRIGHT", buttonSpacing, 0}
-			end
-		end
-		-- frame
-		local button = style.CreateButton(frame, buttonName, buttonSize, anchor)
-------------------------------------------------
--- TODO: REMOVE
--- if i == 1 then
-	-- print("BUTTON "..buttonName.." components")
-	-- for k, v in pairs(button) do
-		-- print(tostring(k).."->"..tostring(v))
-	-- end
-	-- print("Key starting with BUTTON "..buttonName.." in _G")
-	-- for k, v in pairs(_G) do
-		-- if type(k) == "string" then
-			-- local find = strfind(k, buttonName)
-			-- if find then
-				-- print(tostring(k).."->"..tostring(v))
-			-- end
-		-- end
-	-- end
--- end
-------------------------------------------------
-		assert(button.cooldown, "Missing cooldown on HealiumButton:"..buttonName) -- TODO: localization
-		assert(button.texture, "Missing texture on HealiumButton:"..buttonName) -- TODO: localization
-		local vr, vg, vb = button.texture:GetVertexColor()
-		OriginButtonVertexColor = vr and {vr, vg, vb} or OriginButtonVertexColor
-		local br, bg, bb = button:GetBackdropColor()
-		OriginButtonBackdropColor = br and {br, bg, bb} or OriginButtonBackdropColor
-		local bbr, bbg, bbb = button:GetBackdropBorderColor()
-		OriginButtonBackdropBorderColor = bbr and {bbr, bbg, bbb} or OriginButtonBackdropBorderColor
-		-- click event/action, attributes 'type' and 'spell' are set in UpdateFrameButtonsAttributes
-		button:RegisterForClicks("AnyUp")
-		button:SetAttribute("useparent-unit", "true")
-		button:SetAttribute("*unit2", "target")
-		-- tooltip
-		if C.general.showButtonTooltip == true then
-			button:SetScript("OnEnter", ButtonOnEnter)
-			button:SetScript("OnLeave", function(frame)
-				GameTooltip:Hide()
-			end)
-		end
-		-- custom
-		button.hPrereqFailed = false
-		button.hOOM = false
-		button.hDispelHighlight = "none"
-		button.hOOR = false
-		button.hNotUsable = false
-
-		button.hHeaderIndex = nil
-		-- hide
-		button:Hide()
-		-- save button
-		tinsert(frame.hButtons, button)
-	end
-end
-
--- Create debuffs for a frame
-local function CreateHealiumDebuffs(frame)
-	if frame.hDebuffs then return end
-	local style = Styles[frame.hStyle]
-
-	frame.hDebuffs = {}
-	local debuffSize = style.debuffSize or frame:GetHeight()
-	local debuffSpacing = style.debuffSpacing or 2
-	for i = 1, C.general.maxDebuffCount, 1 do
-		-- name
-		local debuffName = frame:GetName().."_HealiumDebuff_"..i
-		-- anchor
-		local anchor
-		if style.GetDebuffAnchor then
-			anchor = style.GetDebuffAnchor(frame, frame.hDebuffs, i)
-		else
-			if i == 1 then
-				anchor = {"TOPLEFT", frame, "TOPRIGHT", debuffSpacing, 0}
-			else
-				anchor = {"TOPLEFT", frame.hDebuffs[i-1], "TOPRIGHT", debuffSpacing, 0}
-			end
-		end
-		-- frame
-		local debuff = style.CreateDebuff(frame, debuffName, debuffSize, anchor)
-		assert(debuff.icon, "Missing icon on HealiumDebuff:"..debuffName) -- TODO: localization
-		assert(debuff.cooldown, "Missing cooldown on HealiumDebuff:"..debuffName) -- TODO: localization
-		assert(debuff.count, "Missing count on HealiumDebuff:"..debuffName) -- TODO: localization
-		-- tooltip
-		if C.general.showDebuffTooltip == true then
-			debuff:SetScript("OnEnter", DebuffOnEnter)
-			debuff:SetScript("OnLeave", function(frame)
-				GameTooltip:Hide()
-			end)
-		end
-		-- hide
-		debuff:Hide()
-		-- save debuff
-		tinsert(frame.hDebuffs, debuff)
-	end
-end
-
--- Create buffs for a frame
-local function CreateHealiumBuffs(frame)
-	if frame.hBuffs then return end
-	local style = Styles[frame.hStyle]
-	frame.hBuffs = {}
-	local buffSize = style.buffSize or frame:GetHeight()
-	local buffSpacing = style.buffSpacing or 2
-	for i = 1, C.general.maxBuffCount, 1 do
-		-- name
-		local buffName = frame:GetName().."_HealiumBuff_"..i
-		-- anchor
-		local anchor
-		if style.GetBuffAnchor then
-			anchor = style.GetBuffAnchor(frame, frame.hBuffs, i)
-		else
-			if i == 1 then
-				anchor = {"TOPRIGHT", frame, "TOPLEFT", -buffSpacing, 0}
-			else
-				anchor = {"TOPRIGHT", frame.hBuffs[i-1], "TOPLEFT", -buffSpacing, 0}
-			end
-		end
-		-- frame
-		local buff = style.CreateBuff(frame, buffName, buffSize, anchor)
-		assert(buff.icon, "Missing icon on HealiumBuff:"..buffName) -- TODO: localization
-		assert(buff.cooldown, "Missing cooldown on HealiumBuff:"..buffName) -- TODO: localization
-		assert(buff.count, "Missing count on HealiumBuff:"..buffName) -- TODO: localization
-		-- tooltip
-		if C.general.showBuffTooltip == true then
-			buff:SetScript("OnEnter", BuffOnEnter)
-			buff:SetScript("OnLeave", function(frame)
-				GameTooltip:Hide()
-			end)
-		end
-		-- hide
-		buff:Hide()
-		-- save buff
-		tinsert(frame.hBuffs, buff)
-	end
-end
-
--- Create unique debuff frame showing most important debuff
-local function CreateHealiumPriorityDebuff(frame)
-	if frame.hPriorityDebuff then return end
-	local style = Styles[frame.hStyle]
-	local debuffName = frame:GetName().."_HealiumPriorityDebuff"
-	local anchor
-	if style.GetDebuffAnchor then
-		anchor = style.GetDebuffAnchor(frame, nil, i)
-	else
-		anchor = {"CENTER", frame, "CENTER", 10, 0}
-	end
-	local size = style.debuffSize or frame:GetHeight() - 6
-	local debuff = style.CreateDebuff(frame, debuffName, size, anchor)
-	assert(debuff.icon, "Missing icon on HealiumDebuff:"..debuffName) -- TODO: localization
-	assert(debuff.cooldown, "Missing cooldown on HealiumDebuff:"..debuffName) -- TODO: localization
-	assert(debuff.count, "Missing count on HealiumDebuff:"..debuffName) -- TODO: localization
-	debuff:SetAlpha(0.7)
-	debuff:Hide()
-	frame.hPriorityDebuff = debuff
-end
---]]
 
 -- Create heal buttons for a frame
 local function CreateHealiumButtons(frame)
@@ -1524,7 +1476,7 @@ local function CreateHealiumButtons(frame)
 
 	if InCombatLockdown() then
 		tinsert(DelayedButtonsCreation, frame)
-		self:RegisterEvent("PLAYER_REGEN_ENABLED")
+		--EventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
 
@@ -1627,6 +1579,11 @@ local function CreateHealiumDebuffs(frame)
 		debuff.count:SetFontObject(NumberFontNormal)
 		debuff.count:SetPoint("BOTTOMRIGHT", 1, -1)
 		debuff.count:SetJustifyH("CENTER")
+		-- shield
+		debuff.shield = debuff:CreateFontString("$parentShield", "OVERLAY")
+		debuff.shield:SetFontObject(NumberFontNormal)
+		debuff.shield:SetPoint("TOP", 1, 1)
+		debuff.shield:SetJustifyH("CENTER")
 --print("CreateHealiumDebuffs "..i.."  2")
 		-- skin
 		if style.SkinDebuff then style.SkinDebuff(frame, debuff) end
@@ -1684,6 +1641,11 @@ local function CreateHealiumBuffs(frame)
 		buff.count:SetFontObject(NumberFontNormal)
 		buff.count:SetPoint("BOTTOMRIGHT", 1, -1)
 		buff.count:SetJustifyH("CENTER")
+		-- shield
+		buff.shield = buff:CreateFontString("$parentShield", "OVERLAY")
+		buff.shield:SetFontObject(NumberFontNormalSmall)
+		buff.shield:SetPoint("TOP", 1, 1)
+		buff.shield:SetJustifyH("CENTER")
 		-- skin
 		if style.SkinBuff then style.SkinBuff(frame, buff) end
 		-- anchor
@@ -1725,6 +1687,11 @@ local function CreateHealiumPriorityDebuff(frame)
 	debuff.count:SetFontObject(NumberFontNormal)
 	debuff.count:SetPoint("BOTTOMRIGHT", 1, -1)
 	debuff.count:SetJustifyH("CENTER")
+	-- shield
+	debuff.shield = debuff:CreateFontString("$parentShield", "OVERLAY")
+	debuff.shield:SetFontObject(NumberFontNormal)
+	debuff.shield:SetPoint("TOP", 1, 1)
+	debuff.shield:SetJustifyH("CENTER")
 	-- skin
 	if style.SkinDebuff then style.SkinDebuff(frame, debuff) end
 	-- anchor
@@ -1887,131 +1854,181 @@ end
 -------------------------------------------------------
 -- Events handler
 -------------------------------------------------------
---local delays = {}
-local function OnEvent(self, event, arg1, arg2, arg3)
-	--print("Event: "..event.."  "..tostring(arg1).."  "..tostring(arg2).."  "..tostring(arg3))
-	--PerformanceCounter:Increment(ADDON_NAME, event)
-	-- local currentTime = GetTime()
-	-- if delays[event] then
-		-- local delay = nil
-		-- if arg1 then
-			-- if delays[event][arg1] then
-				-- delay = currentTime - delays[event][arg1]
-			-- end
-		-- else
-			-- delay = currentTime - delays[event]
-		-- end
-		-- if delay ~= nil then
-			-- print(event.."  "..tostring(arg1).."  "..delay)
-		-- end
-	-- end
-	-- if arg1 then
-		-- delays[event] = {}
-		-- delays[event][arg1] = currentTime
-	-- else
-		-- delays[event] = currentTime
-	-- end
-	if event == "PLAYER_ENTERING_WORLD" then
-		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-		ResetSpecSettings()
-		GetSpecSettings()
-		CheckSpellSettings()
-		UpdateButtonHeaders()
-		ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-		ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-		--ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-		UpdateTransforms()
-		UpdateCooldowns()
-	elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
-		-- TODO: event is fired once by member -> optimize
-		--if GetNumPartyMembers() == 0 then -- only first fired event
-			--GetSpecSettings()
-			ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-			ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-			ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-			UpdateTransforms()
-			UpdateCooldowns()
-		--end
-	elseif event == "PLAYER_REGEN_ENABLED" then
-		local created = CreateDelayedButtons()
-		if created then
-			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+function EventsHandler:PLAYER_ENTERING_WORLD()
+	EventsHandler:UnregisterEvent("PLAYER_ENTERING_WORLD") -- fire only once
+	EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
 
-			--GetSpecSettings()
-			ForEachUnitframe(UpdateFrameButtonsAttributes)
-			ForEachUnitframe(UpdateFrameDebuffsPosition)
-			ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-			UpdateTransforms()
-			UpdateCooldowns()
-		end
-	-- elseif event == "UNIT_SPELLCAST_SENT" and arg1 == "player" and (arg2 == ActivatePrimarySpecSpellName or arg2 == ActivateSecondarySpecSpellName) then
-		-- self.hRespecing = 1 -- respec started
-	-- elseif (event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_SUCCEEDED") and arg1 == "player" and (arg2 == ActivatePrimarySpecSpellName or arg2 == ActivateSecondarySpecSpellName) then
-		-- self.hRespecing = nil --> respec stopped
-	-- elseif event == "PLAYER_TALENT_UPDATE" then
-		-- if self.hRespecing == 2 then -- respec finished
-			-- ResetSpecSettings()
-			-- GetSpecSettings()
-			-- CheckSpellSettings()
-			-- UpdateButtonHeaders()
-			-- ForEachUnitframe(UpdateFrameButtonsAttributes)
-			-- ForEachUnitframe(UpdateFrameDebuffsPosition)
-			-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-			-- UpdateTransforms()
-			-- UpdateCooldowns()
-			-- self.hRespecing = nil -- no respec running
-		-- elseif self.hRespecing == 1 then -- respec not yet finished
-			-- self.hRespecing = 2 -- respec finished
-		-- else -- respec = nil, not respecing (called while connecting)
-			-- GetSpecSettings()
-			-- ForEachUnitframe(UpdateFrameButtonsAttributes)
-			-- ForEachUnitframe(UpdateFrameDebuffsPosition)
-			-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-			-- UpdateTransforms()
-			-- UpdateCooldowns()
+	UpdateUnitByGUID()
+	ResetSpecSettings()
+	GetSpecSettings()
+	CheckSpellSettings()
+	UpdateButtonHeaders()
+	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	UpdateTransforms()
+	UpdateCooldowns()
+
+	-- -- TEST
+	-- if C.general.showShields == true then
+		-- if IsValidZoneForShields() then
+			-- EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
+		-- else
+			-- EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		-- end
-	elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
-		if not self.hFirstActiveTalentGroupChanged then self.hFirstActiveTalentGroupChanged = true return end -- skip first call
-		ResetSpecSettings()
-		GetSpecSettings()
-		CheckSpellSettings()
-		UpdateButtonHeaders()
-		ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-		ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	-- end
+end
+
+local function RaidCompositionModified()
+	-- TODO: event is fired once by member -> optimize
+	UpdateUnitByGUID()
+	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	UpdateTransforms()
+	UpdateCooldowns()
+end
+function EventsHandler:PARTY_MEMBERS_CHANGED()
+	RaidCompositionModified()
+end
+function EventsHandler:RAID_ROSTER_UPDATE()
+	RaidCompositionModified()
+end
+
+function EventsHandler:PLAYER_REGEN_ENABLED()
+	local created = CreateDelayedButtons()
+	if created then
+		--EventsHandler:UnregisterEvent("PLAYER_REGEN_ENABLED")
+
+		ForEachUnitframe(UpdateFrameButtonsAttributes)
+		ForEachUnitframe(UpdateFrameDebuffsPosition)
 		ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 		UpdateTransforms()
 		UpdateCooldowns()
-	elseif event == "SPELL_UPDATE_COOLDOWN" then
-		UpdateCooldowns()
-	elseif event == "UNIT_AURA" then
-		ForEachUnitframeWithUnit(arg1, UpdateFrameBuffsDebuffsPrereqs)
-		if arg1 == "player" then
-			UpdateTransforms()
-		end
-	elseif (event == "UNIT_POWER" or event == "UNIT_MAXPOWER") and arg1 == "player" then
-		local timeSpan = GetTime() - self.hTimeSincePreviousOOMCheck
-		if timeSpan > UpdateDelay then
-			if C.general.showOOM == true then
-				--PerformanceCounter:Increment(ADDON_NAME, "UpdateOOM")
-				UpdateOOM()
-			end
-			self.hTimeSincePreviousOOMCheck = GetTime()
-		-- else
-			-- PerformanceCounter:Increment(ADDON_NAME, "SKIP UpdateOOM")
-		end
-	elseif event == "UNIT_CONNECTION" or event == "UNIT_HEALTH_FREQUENT" then
-		ForEachUnitframeWithUnit(arg1, UpdateFrameDisableStatus)
-	elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
-		if C.general.showGlow == true then
-			AddGlowingSpell(arg1)
-			UpdateGlowing()
-		end
-	elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
-		if C.general.showGlow == true then
-			RemoveGlowingSpell(arg1)
-			UpdateGlowing()
+	end
+	if C.general.showShields == true then
+		EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- only in combat
+	end
+end
+
+function EventsHandler:PLAYER_REGEN_DISABLED()
+	if C.general.showShields == true then
+		if IsValidZoneForShields() then
+			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
+		else
+			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		end
 	end
+end
+
+-- Shield
+local ShieldActions = {
+	SPELL_AURA_APPLIED 		= {1, UpdateFrameApplyShield},
+	SPELL_AURA_REFRESH		= {1, UpdateFrameApplyShield},
+	SPELL_AURA_REMOVED		= {1, UpdateFrameRemoveShield},
+	SPELL_AURA_BROKEN		= {1, UpdateFrameRemoveShield},
+	SPELL_AURA_BROKEN_SPELL	= {1, UpdateFrameRemoveShield},
+	SPELL_HEAL				= {2, UpdateFrameUpdateShield},
+	SPELL_PERIODIC_HEAL		= {2, UpdateFrameUpdateShield},
+	--SPELL_DAMAGE,			= {2, UpdateFrameUpdateShield}, -- TODO: damage
+	--SPELL_PERIODIC_DAMAGE	= {2, UpdateFrameUpdateShield},
+	UNIT_DIED				= {3, UpdateFrameRemoveShield},
+}
+function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(_, event, _, _, _, _, _, destGUID, _, _, _, spellID, _, _, _, amount) -- http://www.wowwiki.com/API_COMBAT_LOG_EVENT
+--print("COMBAT_LOG_EVENT_UNFILTERED")
+	local action = ShieldActions[event]
+	if action then
+		if action[1] == 1 then
+			--local spellID = select(1, ...) -- arg12 is the spellID
+			local shieldInfo = C.shields and C.shields[spellID]
+			if shieldInfo then
+				local unit = GetUnitByGUID(destGUID)
+--print("COMBAT_LOG_EVENT_UNFILTERED:"..tostring(event).."  "..tostring(destGUID).."  "..tostring(action[1]).."  "..tostring(spellID).."  "..tostring(shieldInfo).."  "..tostring(unit))
+				if unit then
+					ForEachUnitframeWithUnit(unit, action[2], spellID, shieldInfo)
+				end
+			end
+		elseif action[1] == 2 then
+			local unit = GetUnitByGUID(destGUID)
+			if unit then
+				--local amount = select(4, ...) -- arg15 is the heal/damage amount
+--print("COMBAT_LOG_EVENT_UNFILTERED:"..tostring(event).."  "..tostring(destGUID).."  "..tostring(action[1]).."  "..tostring(unit).."  "..tostring(amount))
+				ForEachUnitframeWithUnit(unit, action[2], amount, "HEAL") -- HEAL
+				--ForEachUnitframeWithUnit(arg1, action[2], amount, "DAMAGE") -- DAMAGE
+			end
+		elseif action[1] == 3 then
+			local unit = GetUnitByGUID(destGUID)
+			if unit then
+				ForEachUnitframeWithUnit(unit, action[2])
+			end
+		end	
+	end
+end
+
+function EventsHandler:ACTIVE_TALENT_GROUP_CHANGED()
+	-- if not EventsHandler.hFirstActiveTalentGroupChanged then -- skip first call
+		-- EventsHandler.hFirstActiveTalentGroupChanged = true
+		-- return
+	-- end
+	ResetSpecSettings()
+	GetSpecSettings()
+	CheckSpellSettings()
+	UpdateButtonHeaders()
+	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	UpdateTransforms()
+	UpdateCooldowns()
+end
+
+function EventsHandler:SPELL_UPDATE_COOLDOWN()
+	UpdateCooldowns()
+end
+
+function EventsHandler:UNIT_AURA(unit)
+	ForEachUnitframeWithUnit(unit, UpdateFrameBuffsDebuffsPrereqs)
+	if unit == "player" then
+		UpdateTransforms()
+	end
+end
+
+local function PowerModified(self)
+	local timeSpan = GetTime() - EventsHandler.hTimeSincePreviousOOMCheck
+	if timeSpan > UpdateDelay then
+		--PerformanceCounter:Increment(ADDON_NAME, "UpdateOOM")
+		UpdateOOM()
+		EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+	-- else
+		-- PerformanceCounter:Increment(ADDON_NAME, "SKIP UpdateOOM")
+	end
+end
+function EventsHandler:UNIT_POWER(unit)
+	if unit == "player" then
+		PowerModified()
+	end
+end
+function EventsHandler:UNIT_MAXPOWER(unit)
+	if unit == "player" then
+		PowerModified()
+	end
+end
+
+function EventsHandler:UNIT_CONNECTION(unit)
+	ForEachUnitframeWithUnit(unit, UpdateFrameDisableStatus)
+end
+
+function EventsHandler:UNIT_HEALTH_FREQUENT(unit)
+	ForEachUnitframeWithUnit(unit, UpdateFrameDisableStatus)
+end
+
+function EventsHandler:SPELL_ACTIVATION_OVERLAY_GLOW_SHOW(spellID)
+	AddGlowingSpell(spellID)
+	UpdateGlowing()
+end
+
+function EventsHandler:SPELL_ACTIVATION_OVERLAY_GLOW_HIDE(spellID)
+	RemoveGlowingSpell(spellID)
+	UpdateGlowing()
 end
 
 local function OnUpdate(self, elapsed)
@@ -2054,34 +2071,48 @@ function H:Initialize(config)
 		end
 	end
 
+	-- Initialize units<->GUID -- TODO: pets ?
+	RegisterUnit("player") -- pet
+	for i = 1, MAX_PARTY_MEMBERS, 1 do
+		RegisterUnit("party"..i) -- partypet..i
+	end
+	for i = 1, MAX_RAID_MEMBERS, 1 do
+		RegisterUnit("raid"..i) -- raidpet..i
+	end
+	-- for i = 1, 5, 1 do
+		-- RegisterUnit("arena"..i)
+	-- end
+
 	-- Initialize settings
 	InitializeSettings()
 
 	-- Create event handler
-	local eventsHandler = CreateFrame("Frame")
-	eventsHandler.hTimeSincePreviousOOMCheck = GetTime()
-	eventsHandler:RegisterEvent("PLAYER_ALIVE")
-	eventsHandler:RegisterEvent("PLAYER_ENTERING_WORLD")
-	eventsHandler:RegisterEvent("RAID_ROSTER_UPDATE")
-	eventsHandler:RegisterEvent("PARTY_MEMBERS_CHANGED")
-	eventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
---	eventsHandler:RegisterEvent("PLAYER_TALENT_UPDATE")
-	eventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-	eventsHandler:RegisterEvent("UNIT_AURA")
-	eventsHandler:RegisterEvent("UNIT_POWER")
-	eventsHandler:RegisterEvent("UNIT_MAXPOWER")
-	-- eventsHandler:RegisterEvent("UNIT_SPELLCAST_SENT")
-	-- eventsHandler:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-	-- eventsHandler:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-	eventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
-	eventsHandler:RegisterEvent("UNIT_CONNECTION")
-	eventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
-	eventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
-	eventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
-	eventsHandler:SetScript("OnEvent", OnEvent)
+	EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+	EventsHandler:RegisterEvent("PLAYER_ENTERING_WORLD")
+	EventsHandler:RegisterEvent("RAID_ROSTER_UPDATE")
+	EventsHandler:RegisterEvent("PARTY_MEMBERS_CHANGED")
+	EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	EventsHandler:RegisterEvent("UNIT_AURA")
+	if C.general.showShields == true then
+		EventsHandler:RegisterEvent("UNIT_POWER")
+		EventsHandler:RegisterEvent("UNIT_MAXPOWER")
+	end
+	EventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
+	EventsHandler:RegisterEvent("UNIT_CONNECTION")
+	EventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
+	EventsHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
+	if C.general.showGlow == true then
+		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+	end
 
-	eventsHandler.hTimeSinceLastUpdate = GetTime()
-	eventsHandler:SetScript("OnUpdate", OnUpdate)
+	-- Set OnEvent handlers
+	EventsHandler:SetScript("OnEvent", function(self, event, ...)
+		self[event](self, ...)
+	end)
+
+	EventsHandler.hTimeSinceLastUpdate = GetTime()
+	EventsHandler:SetScript("OnUpdate", OnUpdate)
 end
 
 

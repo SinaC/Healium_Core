@@ -25,6 +25,7 @@
 	<Script file="config\filters\blacklist.lua"/>
 	<Script file="config\filters\whitelist.lua"/>
 	<Script file="config\filters\dispellable.lua"/>
+	<Script file="config\filters\shields.lua"/>
 	<Script file="config\profiles.lua"/>
 
 	<Script file="flashframe.lua"/>

@@ -27,6 +27,8 @@ C["general"] = {
 	debuffTooltipAnchor = nil,			-- debuff tooltip anchor (nil means debuff itself)
 	showPriorityDebuff = false,			-- display only one debuff frame displaying the most important debuff (priority may be added in whilelist, lower value means higher priority)
 
+	showShields = true,					-- show absorb shield remaining value see \config\filters\shields.lua
+
 	-- DISPELLABLE: show only dispellable debuff
 	-- BLACKLIST: exclude non-dispellable debuff from list
 	-- WHITELIST: include non-dispellable debuff from list

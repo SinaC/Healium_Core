@@ -2,6 +2,7 @@ local H, C, L = unpack(select(2,...))
 
 -- spellID  or {spellID, priority}     priority: lower value -> higher priority
 -- no priority -> 1000 (lowest priority)
+-- priority: 0->5 = dispellable
 C["whitelist"] = {
 -- PVE
 ------
@@ -148,6 +149,35 @@ C["whitelist"] = {
 		98313,	-- Magma Blast
 		100675,	-- Dreadflame
 		100460,	-- Blazing Heat
+-- Dragon Soul
+	--Morchok
+		103541,	-- Safe
+		103536,	-- Warning
+		103534,	-- Danger
+		108570,	-- Black Blood of the Earth
+		33661,	-- Crush Armor
+	--Warlord Zon'ozz
+		103434,	-- Disrupting Shadows
+	--Yor'sahj the Unsleeping
+		103628,	-- Deep Corruption
+	--Hagara the Stormbinder
+		109325,	-- Frostflake
+		105285,	-- Target
+		105289, -- Shattered Ice
+		104451,	-- Ice Tomb
+		105465,	-- Lightning Storm
+	--Ultraxion
+		106108,	-- Heroic Will -- BUFF??
+		106498,	-- Looming Darkness
+		106415,	-- Twilight Burst
+		109075,	-- Fading Light -- BUFF??
+	--Warmaster Blackhorn
+		109204,	-- Twilight Barrage
+	--Spine of Deathwing
+		{105479, 6},	-- Searing Plasma
+		{105490, 5},	-- Fiery Grip
+	--Madness of Deathwing
+
 -- PVP
 ------
 -- Death Knight
