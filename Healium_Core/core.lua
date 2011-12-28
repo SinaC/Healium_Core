@@ -1001,8 +1001,8 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 					-- if button.hPrereqFailed == true then change = true end
 					-- button.hPrereqFailed = false
 				-- end
-				if prereqBuffFound ~= button.hPrereqFailed then change = true end
-				button.hPrereqFailed = prereqBuffFound
+				if prereqDebuffFound ~= button.hPrereqFailed then change = true end
+				button.hPrereqFailed = prereqDebuffFound
 			end
 			-- color dispel button if affected by a debuff curable by a player spell
 			local dispelHighlighted = false
@@ -1856,7 +1856,11 @@ end
 -------------------------------------------------------
 function EventsHandler:PLAYER_ENTERING_WORLD()
 	EventsHandler:UnregisterEvent("PLAYER_ENTERING_WORLD") -- fire only once
-	EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
+	--EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
+	EventsHandler:RegisterEvent("PLAYER_TALENT_UPDATE")
+ 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SENT")
+ 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+ 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
 	UpdateUnitByGUID()
 	ResetSpecSettings()
@@ -1965,21 +1969,21 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(_, event, _, _, _, _, _, dest
 	end
 end
 
-function EventsHandler:ACTIVE_TALENT_GROUP_CHANGED()
-	-- if not EventsHandler.hFirstActiveTalentGroupChanged then -- skip first call
-		-- EventsHandler.hFirstActiveTalentGroupChanged = true
-		-- return
-	-- end
-	ResetSpecSettings()
-	GetSpecSettings()
-	CheckSpellSettings()
-	UpdateButtonHeaders()
-	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	UpdateTransforms()
-	UpdateCooldowns()
-end
+-- function EventsHandler:ACTIVE_TALENT_GROUP_CHANGED()
+	-- -- if not EventsHandler.hFirstActiveTalentGroupChanged then -- skip first call
+		-- -- EventsHandler.hFirstActiveTalentGroupChanged = true
+		-- -- return
+	-- -- end
+	-- ResetSpecSettings()
+	-- GetSpecSettings()
+	-- CheckSpellSettings()
+	-- UpdateButtonHeaders()
+	-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	-- UpdateTransforms()
+	-- UpdateCooldowns()
+-- end
 
 function EventsHandler:SPELL_UPDATE_COOLDOWN()
 	UpdateCooldowns()
@@ -2029,6 +2033,48 @@ end
 function EventsHandler:SPELL_ACTIVATION_OVERLAY_GLOW_HIDE(spellID)
 	RemoveGlowingSpell(spellID)
 	UpdateGlowing()
+end
+
+function EventsHandler:UNIT_SPELLCAST_SENT(unit, spellName)
+	if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
+		EventsHandler.hRespecing = 1
+	end
+end
+
+function EventsHandler:UNIT_SPELLCAST_INTERRUPTED(unit, spellName)
+	if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
+		EventsHandler.hRespecing = nil --> respec stopped
+	end
+end
+
+function EventsHandler:UNIT_SPELLCAST_SUCCEEDED(unit, spellName)
+	if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
+		EventsHandler.hRespecing = nil --> respec stopped
+	end
+end
+
+function EventsHandler:PLAYER_TALENT_UPDATE()
+	if EventsHandler.hRespecing and EventsHandler.hRespecing == 2 then -- respec finished
+		ResetSpecSettings()
+		GetSpecSettings()
+		CheckSpellSettings()
+		UpdateButtonHeaders()
+		ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+		ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+		ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+		UpdateTransforms()
+		UpdateCooldowns()
+		EventsHandler.hRespecing = nil -- no respec running
+	elseif EventsHandler.hRespecing and EventsHandler.hRespecing == 1 then -- respec not yet finished
+		EventsHandler.hRespecing = 2 -- respec finished
+	-- else -- respec = nil, not respecing (called while connecting)
+		-- GetSpecSettings()
+		-- ForEachUnitframe(UpdateFrameButtonsAttributes)
+		-- ForEachUnitframe(UpdateFrameDebuffsPosition)
+		-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+		-- UpdateTransforms()
+		-- UpdateCooldowns()
+	end
 end
 
 local function OnUpdate(self, elapsed)

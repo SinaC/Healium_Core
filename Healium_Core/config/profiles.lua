@@ -48,7 +48,6 @@ if H.myname == "Yoog" then
 		-- Private.TRemoveByVal(C["blacklist"], 6788)
 	-- end
 
-	C["general"].showPriorityDebuff = true
 	C["SHAMAN"][1] = {}
 	C["SHAMAN"][1].spells = {
 		{ macroName = "TEST" }
@@ -86,6 +85,10 @@ if H.myname == "Nigguro" then
 	if C["blacklist"] then
 		Private.TRemoveByVal(C["blacklist"], 6788)
 	end
+
+	-- -- TEST
+	-- C["PRIEST"][1].spells[5] = { macroName = "TOTO" } -- Nature Swiftness + Greater Healing Wave
+	-- C["PRIEST"][2].spells[5] = { macroName = "GAMIN" } -- Nature Swiftness + Greater Healing Wave
 end
 
 --------------------------------------------------------------
