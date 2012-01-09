@@ -2,6 +2,8 @@
 -- Healium
 -------------------------------------------------------
 
+--local __TEST_SHIELDS = true
+
 -- Exported functions
 ----------------------
 -- H:Initialize(config)
@@ -69,6 +71,7 @@ local EventsHandler = CreateFrame("Frame")
 --		hDebuffs: debuff on unit (no template)
 --		hBuffs: buffs on unit (only buff castable by heal buttons)
 ----		hUnit: last unit assigned to unitframe (used to avoid looping with player->nil in OnAttributeChanged)
+--		hShields: shields on unit (dynamically linked to buff/debuff)
 -- Fields added to hButton
 --		hHeaderIndex: index in ButtonHeaders table
 --		hPrereqFailed: button is disabled because of prereq
@@ -174,36 +177,7 @@ end
 -------------------------------------------------------
 local Styles = {}
 function H:RegisterStyle(styleName, style)
-	---- must contain: CreateButton, CreateDebuff, CreateBuff
-	-- assert(style.CreateButton, "CreateButton missing in style "..styleName) -- TODO: localization
-	-- assert(style.CreateDebuff, "CreateDebuff missing in style "..styleName) -- TODO: localization
-	-- assert(style.CreateBuff, "CreateBuff missing in style "..styleName) -- TODO: localization
 	Styles[styleName] = style
-end
-
--------------------------------------------------------
--- GUID <-> unit
--------------------------------------------------------
-local Units = {}
-local UnitByGUID = {}
-local function GetUnitByGUID(GUID)
-	return UnitByGUID[GUID]
-end
-
-local function RegisterUnit(unit)
-	table.insert(Units, unit)
-end
-
-local function UpdateUnitByGUID()
---print("UpdateUnitByGUID")
-	UnitByGUID = {} -- TODO: GC-friendly
-	for _, unit in ipairs(Units) do
-		local GUID = UnitGUID(unit)
-		if GUID then
---print("UpdateUnitByGUID: "..tostring(unit).."->"..tostring(GUID))
-			UnitByGUID[GUID] = unit
-		end
-	end
 end
 
 -------------------------------------------------------
@@ -253,6 +227,20 @@ local Unitframes = {}
 		-- self.hUnit = newUnit
 	-- end
 -- end
+
+-- Loop among every valid with specified GUID in party/raid and call a function
+local function ForEachUnitframeWithGUID(GUID, fct, ...)
+	--PerformanceCounter:Increment(ADDON_NAME, "ForEachUnitframeWithGUID")
+	if not Unitframes then return end
+	for _, frame in ipairs(Unitframes) do
+		if frame and frame.unit == unit and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+			local unitGUID = UnitGUID(frame.unit)
+			if GUID == unitGUID then
+				fct(frame, ...)
+			end
+		end
+	end
+end
 
 -- Loop among every valid with specified unit unitframe in party/raid and call a function
 local function ForEachUnitframeWithUnit(unit, fct, ...)
@@ -519,7 +507,7 @@ local function ButtonOnEnter(self)
 		elseif macroName then
 			spellName = GetMacroSpell(macroName)
 			if spellName then
-				spellID = GetSpellID(spellName)
+				spellID = GetSpellID(spellName) -- !!! this build a list with a size of 2Mb
 				GameTooltip:SetSpellByID(spellID)
 			end
 			GameTooltip:AddLine(string.format(L.TOOLTIP_MACRO, macroName), 1, 1, 1)
@@ -632,15 +620,6 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime,
 			buff.count:Hide()
 		end
 	end
-	-- -- shield
-	-- if buff.shield then
-		-- if buff.shieldAmount and buff.shieldAmount > 0 then
-			-- buff.shield:SetText(buff.shieldAmount)
-			-- buff.shield:Show()
-		-- else
-			-- buff.shield:Hide()
-		-- end
-	-- end
 	-- cooldown
 	if buff.cooldown then
 		if duration and duration > 0 then
@@ -673,15 +652,6 @@ local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationT
 			debuff.count:Hide()
 		end
 	end
-	-- -- shield
-	-- if debuff.shield then
-		-- if debuff.shieldAmount and debuff.shieldAmount > 0 then
-			-- debuff.shield:SetText(debuff.shieldAmount)
-			-- debuff.shield:Show()
-		-- else
-			-- debuff.shield:Hide()
-		-- end
-	-- end
 	-- cooldown
 	if debuff.cooldown then
 		if duration and duration > 0 then
@@ -712,7 +682,6 @@ end
 -- not usable -> color in medium red
 -- out of mana -> color in medium blue
 -- dispel highlight -> color in debuff color
---local function UpdateButtonColor(frame, button, buttonSpellSetting)
 local function UpdateButtonColor(frame, button)
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonColor")
 	local unit = frame.unit
@@ -852,6 +821,8 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 			for i = buffIndex, C.general.maxBuffCount, 1 do
 				-- hide remainder buff
 				local buff = frame.hBuffs[i]
+				buff.spellID = nil
+				buff.shieldAmount = nil
 				buff:Hide()
 			end
 		end
@@ -941,6 +912,8 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 		for i = debuffIndex, C.general.maxDebuffCount, 1 do
 			-- hide remainder debuff
 			local debuff = frame.hDebuffs[i]
+			debuff.spellID = nil
+			debuff.shieldAmount = nil
 			debuff:Hide()
 		end
 	end
@@ -1213,14 +1186,6 @@ local function UpdateTransforms()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateTransforms")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateTransforms")
 	if not SpecSettings or not SpecSettings.hasTransforms then return end
-	-- -- Get buff on player casted by player
-	-- local buffCount = 0
-	-- for i = 1, 40, 1 do
-		-- local name, _, _, _, _, _, _, _, _, _, buffSpellID = UnitBuff("player", i, "PLAYER|CANCELLABLE|")
-		-- if not name then break end
-		-- ListBuffs[i] = buffSpellID -- use same buffer as UpdateFrameBuffsDebuffsPrereqs (it's not a problem, this buffer is not used between calls)
-		-- buffCount = buffCount + 1
-	-- end
 	-- If transform found and buff matches then update icon
 	for index, buttonHeader in ipairs(ButtonHeaders) do
 		local spellSetting = buttonHeader.hInitialized and buttonHeader.hSpell
@@ -1228,26 +1193,9 @@ local function UpdateTransforms()
 		if spellSetting.transforms and spellSetting.spellID then
 			local transformToSpellID = spellSetting.spellID
 			local transformToSpellName = spellSetting.spellName
-			--for buffTransformSpellID, transformSetting in pairs(spellSetting.transforms) do
-				--local transformed = false
-				-- for i = 1, buffCount, 1 do
-					-- local buffSpellID = ListBuffs[i]
-					-- if buffTransformSpellID == buffSpellID then
-						-- transformToSpellID = transformSetting.spellID
-						-- transformToSpellName = transformSetting.spellName
-						-- transformed = true
-					-- end
-					-- if transformed then
-						-- break
-					-- end
-				-- end
-				-- if transformed then
-					-- break
-				-- end
-			--end
 			for _, transformSetting in pairs(spellSetting.transforms) do
 				local buffTransformSpellName = transformSetting.buffSpellName
-				local name = UnitBuff("player", buffTransformSpellName) -- check if affected by buff
+				local name = UnitBuff("player", buffTransformSpellName) -- check if player is affected by buff
 				if name then
 					transformToSpellID = transformSetting.spellID
 					transformToSpellName = transformSetting.spellName
@@ -1277,77 +1225,119 @@ local function UpdateTransforms()
 end
 
 -- Apply/Update/Remove Shields
-local function UpdateFrameApplyShield(frame, spellID, shieldInfo)
---print("UpdateFrameApplyShield")
-	if shieldInfo.type == "BUFF" then
+local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
+	local function FormatShieldValue(value, maxValue)
+		-- if maxValue then  -- PERCENTAGE
+			-- return string.format("%d%%", math.max(1, math.floor(100 * value / maxValue)))
+		-- else
+			if value >= 1000000 then
+				return string.format("%.1fm", value/1000000)
+			elseif value >= 1000 then
+				return string.format("%dk", value/1000)
+			else
+				return value
+			end
+		-- end
+	end
+	if not frame.hShields then return end
+--print("UpdateFrameUpdateShieldsOnBuffsDebuffs: shields found")
+	if frame.hBuffs then
 		for _, buff in ipairs(frame.hBuffs) do
-			if buff.spellID == spellID then
-				buff.shieldAmount = shieldInfo.amount or 0
-				buff.shield:SetText(buff.shieldAmount)
-				buff.shield:Show()
+			local found = false
+			for _, shield in ipairs(frame.hShields) do
+				if shield.enabled == true and buff.spellID == shield.spellID then
+					buff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
+					buff.shield:Show()
+					found = true
+					break
+				end
+			end
+			if not found then
+				buff.shield:Hide()
 			end
 		end
-	elseif shieldInfo.type == "DEBUFF" then
+	end
+	if frame.hDebuffs then
 		for _, debuff in ipairs(frame.hDebuffs) do
-			if debuff.spellID == spellID then
-				debuff.shieldAmount = shieldInfo.amount or 0
-				debuff.shield:SetText(debuff.shieldAmount)
-				debuff.shield:Show()
+			local found = false
+			for _, shield in ipairs(frame.hShields) do
+				if shield.enabled == true and debuff.spellID == shield.spellID then
+					debuff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
+					debuff.shield:Show()
+					found = true
+					break
+				end
+			end
+			if not found then
+				debuff.shield:Hide()
 			end
 		end
 	end
-end
-local function UpdateFrameRemoveShield(frame, spellID)
-	-- if no spellID, remove every shields
-	for _, buff in ipairs(frame.hBuffs) do
-		if not spellID or buff.spellID == spellID then
-			buff.shieldAmount = nil
-			buff.shield:Hide()
+	if frame.hPriorityDebuff then
+		local debuff = frame.hPriorityDebuff
+		local found = false
+		for _, shield in ipairs(frame.hShields) do
+			if shield.enabled == true and debuff.spellID == shield.spellID then
+				debuff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
+				debuff.shield:Show()
+				found = true
+				break
+			end
 		end
-	end
-	for _, debuff in ipairs(frame.hDebuffs) do
-		if not spellID or debuff.spellID == spellID then
-			debuff.shieldAmount = nil
+		if not found then
 			debuff.shield:Hide()
 		end
 	end
 end
-local function UpdateFrameUpdateShield(frame, amount, type)
-	for spellID, shieldInfo in pairs(C["shields"]) do
-		if shieldInfo.type == "BUFF" and shieldInfo.modifier == type then
-			for _, buff in ipairs(frame.hBuffs) do
-				if buff.spellID == spellID then
-					if shieldInfo.amount then
-						buff.shieldAmount = math.max((buff.shieldAmount or shieldInfo.amount) - amount, 0) -- decreasing
-					else
-						buff.shieldAmount = (buff.shieldAmount or 0) + amount -- increasing
-					end
-					if buff.shieldAmount > 0 then
-						buff.shield:SetText(buff.shieldAmount)
-						buff.shield:Show()
-					else
-						buff.shield:Hide()
-					end
-				end
-			end
-		elseif shieldInfo.type == "DEBUFF" and shieldInfo.modifier == type then
-			for _, debuff in ipairs(frame.hDebuffs) do
-				if debuff.spellID == spellID then
-					if shieldInfo.amount then
-						debuff.shieldAmount = math.max((debuff.shieldAmount or shieldInfo.amount) - amount, 0) -- decreasing
-					else
-						debuff.shieldAmount = (debuff.shieldAmount or 0) + amount -- increasing
-					end
-					if debuff.shieldAmount > 0 then
-						debuff.shield:SetText(debuff.shieldAmount)
-						debuff.shield:Show()
-					else
-						debuff.shield:Hide()
-					end
-				end
+local function UpdateFrameApplyShield(frame, spellID, shieldInfo)
+--print("UpdateFrameApplyShield:"..tostring(spellID).."  "..tostring(shieldInfo))
+	local found = false
+	if frame.hShields then
+		for _, shield in ipairs(frame.hShields) do
+			if shield.spellID == spellID and shield.info.type == shieldInfo.type then
+				-- refresh
+				shield.amount = shieldInfo.amount or 0
+				shield.enabled = true
+				found = true
+				break
 			end
 		end
 	end
+	if not found then
+--print("NEW shield")
+		if not frame.hShields then frame.hShields = {} end
+		-- new
+		tinsert(frame.hShields, {spellID = spellID, amount = shieldInfo.amount or 0, info = shieldInfo, enabled = true})
+	end
+	UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
+end
+local function UpdateFrameRemoveShield(frame, spellID)
+	if not frame.hShields then return end
+	for _, shield in ipairs(frame.hShields) do
+		if not spellID or shield.spellID == spellID then
+			-- remove
+--print("DISABLE SHIELD:"..tostring(spellID))
+			shield.enabled = false
+			break
+		end
+	end
+	UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
+end
+local function UpdateFrameUpdateShield(frame, amount, modifier)
+	if not frame.hShields then return end
+--print("UpdateFrameUpdateShield:"..tostring(amount).."  "..tostring(modifier))
+	for _, shield in ipairs(frame.hShields) do
+		if shield.info.modifier == modifier then
+			if shield.info.amount then
+--print("DECREASING")
+				shield.amount = math.max((shield.amount or shield.info.amount) - amount, 0) -- decreasing
+			else
+--print("INCREASING")
+				shield.amount = (shield.amount or 0) + amount -- increasing
+			end
+		end
+	end
+	UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 end
 
 -- Update healium frame debuff position, debuff must be anchored to last shown button
@@ -1856,13 +1846,12 @@ end
 -------------------------------------------------------
 function EventsHandler:PLAYER_ENTERING_WORLD()
 	EventsHandler:UnregisterEvent("PLAYER_ENTERING_WORLD") -- fire only once
-	--EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
+	----EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
 	EventsHandler:RegisterEvent("PLAYER_TALENT_UPDATE")
- 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SENT")
- 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
- 	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SENT")
+	EventsHandler:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+	EventsHandler:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
-	UpdateUnitByGUID()
 	ResetSpecSettings()
 	GetSpecSettings()
 	CheckSpellSettings()
@@ -1873,10 +1862,14 @@ function EventsHandler:PLAYER_ENTERING_WORLD()
 	UpdateTransforms()
 	UpdateCooldowns()
 
+	if __TEST_SHIELDS then
+		print("__TEST_SHIELDS")
+		EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	end
 	-- -- TEST
 	-- if C.general.showShields == true then
 		-- if IsValidZoneForShields() then
-			-- EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
+			--EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		-- else
 			-- EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		-- end
@@ -1885,7 +1878,6 @@ end
 
 local function RaidCompositionModified()
 	-- TODO: event is fired once by member -> optimize
-	UpdateUnitByGUID()
 	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
 	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
@@ -1927,45 +1919,68 @@ end
 
 -- Shield
 local ShieldActions = {
-	SPELL_AURA_APPLIED 		= {1, UpdateFrameApplyShield},
+	SPELL_AURA_APPLIED		= {1, UpdateFrameApplyShield},
+	SPELL_AURA_APPLIED_DOSE	= {1, UpdateFrameApplyShield},
 	SPELL_AURA_REFRESH		= {1, UpdateFrameApplyShield},
 	SPELL_AURA_REMOVED		= {1, UpdateFrameRemoveShield},
 	SPELL_AURA_BROKEN		= {1, UpdateFrameRemoveShield},
 	SPELL_AURA_BROKEN_SPELL	= {1, UpdateFrameRemoveShield},
 	SPELL_HEAL				= {2, UpdateFrameUpdateShield},
 	SPELL_PERIODIC_HEAL		= {2, UpdateFrameUpdateShield},
-	--SPELL_DAMAGE,			= {2, UpdateFrameUpdateShield}, -- TODO: damage
-	--SPELL_PERIODIC_DAMAGE	= {2, UpdateFrameUpdateShield},
 	UNIT_DIED				= {3, UpdateFrameRemoveShield},
 }
-function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(_, event, _, _, _, _, _, destGUID, _, _, _, spellID, _, _, _, amount) -- http://www.wowwiki.com/API_COMBAT_LOG_EVENT
+function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, ...)-- http://www.wowwiki.com/API_COMBAT_LOG_EVENT
 --print("COMBAT_LOG_EVENT_UNFILTERED")
 	local action = ShieldActions[event]
 	if action then
+		local spellID = select(1, ...)
 		if action[1] == 1 then
-			--local spellID = select(1, ...) -- arg12 is the spellID
 			local shieldInfo = C.shields and C.shields[spellID]
 			if shieldInfo then
-				local unit = GetUnitByGUID(destGUID)
 --print("COMBAT_LOG_EVENT_UNFILTERED:"..tostring(event).."  "..tostring(destGUID).."  "..tostring(action[1]).."  "..tostring(spellID).."  "..tostring(shieldInfo).."  "..tostring(unit))
-				if unit then
-					ForEachUnitframeWithUnit(unit, action[2], spellID, shieldInfo)
-				end
+				-- for _, frame in ipairs(Unitframes) do
+					-- if frame and frame.unit then
+						-- local unitGUID = UnitGUID(frame.unit)
+						-- if destGUID == unitGUID then
+							-- action[2](frame, spellID, shieldInfo)
+						-- end
+					-- end
+				-- end
+				ForEachUnitframeWithGUID(destGUID, action[2], spellID, shieldInfo)
 			end
 		elseif action[1] == 2 then
-			local unit = GetUnitByGUID(destGUID)
-			if unit then
-				--local amount = select(4, ...) -- arg15 is the heal/damage amount
 --print("COMBAT_LOG_EVENT_UNFILTERED:"..tostring(event).."  "..tostring(destGUID).."  "..tostring(action[1]).."  "..tostring(unit).."  "..tostring(amount))
-				ForEachUnitframeWithUnit(unit, action[2], amount, "HEAL") -- HEAL
-				--ForEachUnitframeWithUnit(arg1, action[2], amount, "DAMAGE") -- DAMAGE
+			local amount, overheal, absorbed, critical = select(4, ...)
+			-- for _, frame in ipairs(Unitframes) do
+				-- if frame and frame.unit then
+					-- local unitGUID = UnitGUID(frame.unit)
+					-- if destGUID == unitGUID then
+						-- action[2](frame, absorbed, "ABSORB")
+						-- --action[2](frame, amount, "HEAL")
+					-- end
+				-- end
+			-- end
+			if __TEST_SHIELDS then
+				print("__TEST_SHIELDS:"..tostring(amount))
+				if amount and amount > 0 then
+					ForEachUnitframeWithGUID(destGUID, action[2], amount, "HEAL")
+				end
+			else
+				if absorbed and absorbed > 0 then
+					ForEachUnitframeWithGUID(destGUID, action[2], absorbed, "ABSORB")
+				end
 			end
 		elseif action[1] == 3 then
-			local unit = GetUnitByGUID(destGUID)
-			if unit then
-				ForEachUnitframeWithUnit(unit, action[2])
-			end
-		end	
+			-- for _, frame in ipairs(Unitframes) do
+				-- if frame and frame.unit then
+					-- local unitGUID = UnitGUID(frame.unit)
+					-- if destGUID == unitGUID then
+						-- action[2](frame)
+					-- end
+				-- end
+			-- end
+			ForEachUnitframeWithGUID(destGUID, action[2])
+		end
 	end
 end
 
@@ -2117,18 +2132,6 @@ function H:Initialize(config)
 		end
 	end
 
-	-- Initialize units<->GUID -- TODO: pets ?
-	RegisterUnit("player") -- pet
-	for i = 1, MAX_PARTY_MEMBERS, 1 do
-		RegisterUnit("party"..i) -- partypet..i
-	end
-	for i = 1, MAX_RAID_MEMBERS, 1 do
-		RegisterUnit("raid"..i) -- raidpet..i
-	end
-	-- for i = 1, 5, 1 do
-		-- RegisterUnit("arena"..i)
-	-- end
-
 	-- Initialize settings
 	InitializeSettings()
 
@@ -2160,21 +2163,3 @@ function H:Initialize(config)
 	EventsHandler.hTimeSinceLastUpdate = GetTime()
 	EventsHandler:SetScript("OnUpdate", OnUpdate)
 end
-
-
--- -- COMBAT LOG EVENTS
--- local combatLogFrame = CreateFrame("Frame")
--- combatLogFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
--- combatLogFrame:SetScript("OnEvent", function(timestamp, event, unitGUID, effect, _, meGUID, _, _, _, _, targetName, _, _, _, spell, _, school, stacks)
-	-- if effect == "SPELL_AURA_APPLIED_DOSE" or effect == "SPELL_AURA_APPLIED" or effect == "SPELL_AURA_REFRESH" then
-		-- print("BUFF APPLIED/REFRESHED:"..tostring(targetName).." "..tostring(spell).." "..tostring(school).."  "..tostring(stacks))
-	-- elseif effect == "SPELL_AURA_REMOVED" or effect == "SPELL_AURA_DISPELLED" or effect == "SPELL_AURA_REMOVED_DOSE" then
-		-- print("AURA FADED:"..tostring(targetName).." "..tostring(spell).." "..tostring(school).."  "..tostring(stacks))
-	-- elseif effect == "SPELL_CAST_SUCCESS" or effect == "SPELL_HEAL" then
-		-- print("SPELL CASTED:"..tostring(targetName).." "..tostring(spell).." "..tostring(school).."  "..tostring(stacks))
-	-- elseif effect == "SPELL_CAST_START" then
-		-- print("SPELL START:"..tostring(targetName).." "..tostring(spell).." "..tostring(school).."  "..tostring(stacks))
-	-- elseif effect == "SPELL_RESURRECT" then
-		-- print("REZ: "..tostring(targetName).." "..tostring(spell).." "..tostring(school).."  "..tostring(stacks))
-	-- end
--- end)

@@ -103,7 +103,7 @@ function Private.TRemoveByVal(tab, val)
 end
 
 -- Get spellID from spellName
-local idCache = setmetatable({}, {
+local idCache = setmetatable({}, { -- This metatable takes 2Mb of memory
 	-- Use weak references both for key and values
 	__mode = 'kv', 
 	-- This is called only if the key has not been found in the table
