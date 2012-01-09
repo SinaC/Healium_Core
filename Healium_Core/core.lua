@@ -233,7 +233,7 @@ local function ForEachUnitframeWithGUID(GUID, fct, ...)
 	--PerformanceCounter:Increment(ADDON_NAME, "ForEachUnitframeWithGUID")
 	if not Unitframes then return end
 	for _, frame in ipairs(Unitframes) do
-		if frame and frame.unit == unit and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+		if frame and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
 			local unitGUID = UnitGUID(frame.unit)
 			if GUID == unitGUID then
 				fct(frame, ...)
@@ -1960,8 +1960,9 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster,
 					-- end
 				-- end
 			-- end
+--print(tostring(amount).."  "..tostring(overheal).."  "..tostring(absorbed).."  "..tostring(critical))
 			if __TEST_SHIELDS then
-				print("__TEST_SHIELDS:"..tostring(amount))
+				--print("__TEST_SHIELDS:"..tostring(amount))
 				if amount and amount > 0 then
 					ForEachUnitframeWithGUID(destGUID, action[2], amount, "HEAL")
 				end
