@@ -233,7 +233,7 @@ local function ForEachUnitframeWithGUID(GUID, fct, ...)
 	--PerformanceCounter:Increment(ADDON_NAME, "ForEachUnitframeWithGUID")
 	if not Unitframes then return end
 	for _, frame in ipairs(Unitframes) do
-		if frame and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+		if frame and frame.unit and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
 			local unitGUID = UnitGUID(frame.unit)
 			if GUID == unitGUID then
 				fct(frame, ...)
@@ -581,7 +581,7 @@ end
 local function IsValidZoneForShields()
 	SetMapToCurrentZone()
 	local zone = GetCurrentMapAreaID()
-	for _, shieldInfo in pairs(C["shields"]) do
+	for _, shieldInfo in pairs(C.shields) do
 		if not shieldInfo.map then return true end
 		if shieldInfo.map and shieldInfo.map == zone then return true end
 	end
@@ -1903,6 +1903,7 @@ function EventsHandler:PLAYER_REGEN_ENABLED()
 		UpdateCooldowns()
 	end
 	if C.general.showShields == true then
+		DEBUG(1000, "Shields check deactivated out-of-combat")
 		EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- only in combat
 	end
 end
@@ -1910,9 +1911,11 @@ end
 function EventsHandler:PLAYER_REGEN_DISABLED()
 	if C.general.showShields == true then
 		if IsValidZoneForShields() then
-			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
+			DEBUG(1000, "Shields check activated")
+			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 		else
-			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
+			DEBUG(1000, "Shields check desactivated no shields for this zone")
+			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 		end
 	end
 end
