@@ -10,8 +10,8 @@ C["shields"] = {
 	[109364] = {type = "DEBUFF", modifier = "ABSORB", amount = 420000, map = 824}, -- Searing Plasma (Spine of Deathwing 25H)
 
 	-- TEST
-	--[974] = {type = "BUFF", modifier = "HEAL", amount = 200000 }, -- Earth Shield TODO remove
-	--[48438] = {type = "BUFF", modifier = "HEAL", amount = 100000 }, -- Wild Growth TODO remove
-	--[57724] = {type = "DEBUFF", modifier = "HEAL" }, -- Bloodlust TODO remove
+	--[974] = {type = "BUFF", modifier = "HEAL", amount = 1200000 }, -- Earth Shield
+	--[48438] = {type = "BUFF", modifier = "HEAL", amount = 100000 }, -- Wild Growth
+	--[57724] = {type = "DEBUFF", modifier = "HEAL" }, -- Bloodlust
 	--[53563] = {type = "BUFF", modifier = "HEAL", amount = 200000}--, map = 4  }, -- Guide de lumière + Durotar
 }
