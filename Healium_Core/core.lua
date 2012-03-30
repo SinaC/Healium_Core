@@ -589,7 +589,7 @@ local function IsValidZoneForShields()
 end
 
 -------------------------------------------------------
--- Healium buttons/buff/debuffs update
+-- Healium buttons/buffs/debuffs update
 -------------------------------------------------------
 -- Show button glow
 local function ShowButtonGlow(frame, button)
@@ -602,7 +602,7 @@ local function HideButtonGlow(frame, button)
 end
 
 -- Update buff icon, id, unit, ...
-local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime, spellID)
+local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirationTime, spellID)
 	-- id, unit: used by tooltip
 	buff:SetID(id)
 	buff.unit = unit
@@ -610,6 +610,15 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime,
 	-- texture
 	if buff.icon then
 		buff.icon:SetTexture(icon)
+	end
+	-- check shield
+	local shieldFound = false
+	if frame.hShields then
+		for _, shield in ipairs(frame.hShields) do
+			if shield.enabled == true and buff.spellID == shield.spellID then
+				shieldFound = true
+			end
+		end
 	end
 	-- count
 	if buff.count then
@@ -622,7 +631,7 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime,
 	end
 	-- cooldown
 	if buff.cooldown then
-		if duration and duration > 0 then
+		if not shieldFound and duration and duration > 0 then
 			local startTime = expirationTime - duration
 			buff.cooldown:SetCooldown(startTime, duration)
 		else
@@ -634,7 +643,7 @@ local function UpdateBuff(buff, id, unit, icon, count, duration, expirationTime,
 end
 
 -- Update debuff icon, id, unit, ...
-local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationTime, debuffType, spellID)
+local function UpdateDebuff(frame, debuff, id, unit, icon, count, duration, expirationTime, debuffType, spellID)
 	-- id, unit: used by tooltip
 	debuff:SetID(id)
 	debuff.unit = unit
@@ -642,6 +651,15 @@ local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationT
 	-- texture
 	if debuff.icon then
 		debuff.icon:SetTexture(icon)
+	end
+	-- check shield
+	local shieldFound = false
+	if frame.hShields then
+		for _, shield in ipairs(frame.hShields) do
+			if shield.enabled == true and debuff.spellID == shield.spellID then
+				shieldFound = true
+			end
+		end
 	end
 	-- count
 	if debuff.count then
@@ -654,7 +672,7 @@ local function UpdateDebuff(debuff, id, unit, icon, count, duration, expirationT
 	end
 	-- cooldown
 	if debuff.cooldown then
-		if duration and duration > 0 then
+		if not shieldFound and duration and duration > 0 then
 			local startTime = expirationTime - duration
 			debuff.cooldown:SetCooldown(startTime, duration)
 			debuff.cooldown:Show()
@@ -780,7 +798,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 			local filtered = true
 			if C.general.showBuff == true and frame.hBuffs and buffIndex <= C.general.maxBuffCount then
 				-- check buffs list
-				if SpecSettings and SpecSettings.buffs then
+				if SpecSettings and SpecSettings.buffs and unitCaster == "player" then
 					for index, buffSetting in pairs(SpecSettings.buffs) do
 						if buffSetting.spellName == name then
 							filtered = false
@@ -811,7 +829,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if not filtered then
 					-- buff displayed
 					local buff = frame.hBuffs[buffIndex]
-					UpdateBuff(buff, i, unit, icon, count, duration, expirationTime, spellID)
+					UpdateBuff(frame, buff, i, unit, icon, count, duration, expirationTime, spellID)
 					-- next buff
 					buffIndex = buffIndex + 1
 				end
@@ -896,13 +914,13 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if frame.hDebuffs and debuffIndex <= C.general.maxDebuffCount then
 					-- set normal debuff
 					local debuff = frame.hDebuffs[debuffIndex]
-					UpdateDebuff(debuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
+					UpdateDebuff(frame, debuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
 					-- next debuff
 					debuffIndex = debuffIndex + 1
 				end
 				if frame.hPriorityDebuff and debuffPriority <= frame.hPriorityDebuff.priority then
 					-- set priority debuff if any
-					UpdateDebuff(frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
+					UpdateDebuff(frame, frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
 					frame.hPriorityDebuff.priority = debuffPriority
 				end
 			end
@@ -1227,6 +1245,7 @@ end
 -- Apply/Update/Remove Shields
 local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 	local function FormatShieldValue(value, maxValue)
+		value = value or 0
 		-- if maxValue then  -- PERCENTAGE
 			-- return string.format("%d%%", math.max(1, math.floor(100 * value / maxValue)))
 		-- else
@@ -1248,12 +1267,14 @@ local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 				if shield.enabled == true and buff.spellID == shield.spellID then
 					buff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
 					buff.shield:Show()
+					--buff.cooldown:Hide()
 					found = true
 					break
 				end
 			end
 			if not found then
 				buff.shield:Hide()
+				--buff.cooldown:Show()
 			end
 		end
 	end
@@ -1264,12 +1285,14 @@ local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 				if shield.enabled == true and debuff.spellID == shield.spellID then
 					debuff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
 					debuff.shield:Show()
+					--debuff.cooldown:Show()
 					found = true
 					break
 				end
 			end
 			if not found then
 				debuff.shield:Hide()
+				--debuff.cooldown:Hide()
 			end
 		end
 	end
@@ -1280,12 +1303,14 @@ local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 			if shield.enabled == true and debuff.spellID == shield.spellID then
 				debuff.shield:SetText(FormatShieldValue(shield.amount, shield.info.amount))
 				debuff.shield:Show()
+				--debuff.cooldown:Show()
 				found = true
 				break
 			end
 		end
 		if not found then
 			debuff.shield:Hide()
+			--debuff.cooldown:Hide()
 		end
 	end
 end
@@ -1318,6 +1343,7 @@ local function UpdateFrameRemoveShield(frame, spellID)
 			-- remove
 --print("DISABLE SHIELD:"..tostring(spellID))
 			shield.enabled = false
+			shield.amount = nil
 			break
 		end
 	end
@@ -1572,7 +1598,9 @@ local function CreateHealiumDebuffs(frame)
 		-- shield
 		debuff.shield = debuff:CreateFontString("$parentShield", "OVERLAY")
 		debuff.shield:SetFontObject(NumberFontNormal)
-		debuff.shield:SetPoint("TOP", 1, 1)
+		--debuff.shield:SetPoint("TOP", 1, 1)
+		--debuff.shield:SetJustifyH("CENTER")
+		debuff.shield:SetPoint("CENTER", 0, 0)
 		debuff.shield:SetJustifyH("CENTER")
 --print("CreateHealiumDebuffs "..i.."  2")
 		-- skin
@@ -1634,7 +1662,9 @@ local function CreateHealiumBuffs(frame)
 		-- shield
 		buff.shield = buff:CreateFontString("$parentShield", "OVERLAY")
 		buff.shield:SetFontObject(NumberFontNormalSmall)
-		buff.shield:SetPoint("TOP", 1, 1)
+		-- buff.shield:SetPoint("TOP", 1, 1)
+		-- buff.shield:SetJustifyH("CENTER")
+		buff.shield:SetPoint("CENTER", 0, 0)
 		buff.shield:SetJustifyH("CENTER")
 		-- skin
 		if style.SkinBuff then style.SkinBuff(frame, buff) end
@@ -1680,8 +1710,11 @@ local function CreateHealiumPriorityDebuff(frame)
 	-- shield
 	debuff.shield = debuff:CreateFontString("$parentShield", "OVERLAY")
 	debuff.shield:SetFontObject(NumberFontNormal)
-	debuff.shield:SetPoint("TOP", 1, 1)
+	-- debuff.shield:SetPoint("TOP", 1, 1)
+	-- debuff.shield:SetJustifyH("CENTER")
+	debuff.shield:SetPoint("CENTER", 0, 0)
 	debuff.shield:SetJustifyH("CENTER")
+
 	-- skin
 	if style.SkinDebuff then style.SkinDebuff(frame, debuff) end
 	-- anchor
@@ -1903,7 +1936,6 @@ function EventsHandler:PLAYER_REGEN_ENABLED()
 		UpdateCooldowns()
 	end
 	if C.general.showShields == true then
-		DEBUG(1000, "Shields check deactivated out-of-combat")
 		EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- only in combat
 	end
 end
@@ -1911,11 +1943,9 @@ end
 function EventsHandler:PLAYER_REGEN_DISABLED()
 	if C.general.showShields == true then
 		if IsValidZoneForShields() then
-			DEBUG(1000, "Shields check activated")
-			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		else
-			DEBUG(1000, "Shields check desactivated no shields for this zone")
-			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		end
 	end
 end
@@ -1971,6 +2001,7 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster,
 				end
 			else
 				if absorbed and absorbed > 0 then
+--print("ABSORBED  "..tostring(absorbed))
 					ForEachUnitframeWithGUID(destGUID, action[2], absorbed, "ABSORB")
 				end
 			end

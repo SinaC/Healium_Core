@@ -37,45 +37,45 @@ if H.myname == "Yoog" then
 
 	C["SHAMAN"][3].spells[5] = { macroName = "NSHW" } -- Nature Swiftness + Greater Healing Wave
 
-	--------------------------------------------------
-	-- TEST
-	C["general"].debuffFilter = "NONE"
+	-- --------------------------------------------------
+	-- -- TEST
+	-- C["general"].debuffFilter = "NONE"
 
-	C["general"].debugDebuff = "Curse"
+	-- C["general"].debugDebuff = "Curse"
 
-	--C["SHAMAN"][3].spells = nil
-	-- if C["blacklist"] then
-		-- Private.TRemoveByVal(C["blacklist"], 6788)
-	-- end
+	-- --C["SHAMAN"][3].spells = nil
+	-- -- if C["blacklist"] then
+		-- -- Private.TRemoveByVal(C["blacklist"], 6788)
+	-- -- end
 
-	C["SHAMAN"][1] = {}
-	C["SHAMAN"][1].spells = {
-		{ macroName = "TEST" }
-	}
-	C["general"].maxButtonCount = 14
-	-- C.general.buttonSpacing = 0
-	-- C.general.buffSpacing = 0
-	-- C.general.debuffSpacing = 0
-	C["SHAMAN"][3].spells = {
-		{ id = 3 }, -- Earth Shield
-		{ id = 6 }, -- Riptide
-		{ id = 4 }, -- Healing Surge
-		{ id = 1 }, -- Healing Wave
-		{ macroName = "NSHW" }, -- Greater Healing Wave
-		{ id = 2 }, -- Chain Heal
-		{ id = 5 }, -- Cleanse Spirit
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-		{ id = 6 }, -- Riptide
-	}
-	-- C["SHAMAN"][3].spells = {
-		-- { macroName = "TESTCD" },
+	-- C["SHAMAN"][1] = {}
+	-- C["SHAMAN"][1].spells = {
 		-- { macroName = "TEST" }
 	-- }
+	-- C["general"].maxButtonCount = 14
+	-- -- C.general.buttonSpacing = 0
+	-- -- C.general.buffSpacing = 0
+	-- -- C.general.debuffSpacing = 0
+	-- C["SHAMAN"][3].spells = {
+		-- { id = 3 }, -- Earth Shield
+		-- { id = 6 }, -- Riptide
+		-- { id = 4 }, -- Healing Surge
+		-- { id = 1 }, -- Healing Wave
+		-- { macroName = "NSHW" }, -- Greater Healing Wave
+		-- { id = 2 }, -- Chain Heal
+		-- { id = 5 }, -- Cleanse Spirit
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+		-- { id = 6 }, -- Riptide
+	-- }
+	-- -- C["SHAMAN"][3].spells = {
+		-- -- { macroName = "TESTCD" },
+		-- -- { macroName = "TEST" }
+	-- -- }
 end
 
 if H.myname == "Nigguro" then
@@ -85,6 +85,8 @@ if H.myname == "Nigguro" then
 	if C["blacklist"] then
 		Private.TRemoveByVal(C["blacklist"], 6788)
 	end
+
+	C["PRIEST"][1].buffs = { 47517 } -- Grace
 
 	-- -- TEST
 	-- C["PRIEST"][1].spells[5] = { macroName = "TOTO" } -- Nature Swiftness + Greater Healing Wave
