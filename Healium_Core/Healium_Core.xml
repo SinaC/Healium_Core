@@ -32,7 +32,7 @@
 	<Script file="unitframes.lua"/>
 	<Script file="core.lua"/>
 
-	<Script file="test\test.lua"/>
+	<!--<Script file="test\test.lua"/>-->
 
 	<Script file="finalize.lua"/>
 </Ui>

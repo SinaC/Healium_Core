@@ -1,5 +1,5 @@
-## Interface: 40300
-## Version: 2.5
+## Interface: 50001
+## Version: 2.6
 ## Author: SinaC
 ## Title: Healium Core
 ## Credits: Engypoo, Dezyne

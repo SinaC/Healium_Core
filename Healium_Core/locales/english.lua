@@ -1,5 +1,6 @@
 local H, C, L, oUF = unpack(select(2, ...))
 
+L.GUID_ISNIL = "Invalid GUID for unit %s"
 L.INITIALIZE_PREDEFINEDLISTNOTFOUND = "Predefined list not found"
 L.INITIALIZE_PREDEFINEDIDNOTFOUND = "ID %s not found in predefined list"
 L.CHECKSPELL_NOSPELLSFOUND = "No spells found for current spec"

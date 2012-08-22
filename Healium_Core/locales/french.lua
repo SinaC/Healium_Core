@@ -1,6 +1,7 @@
 local H, C, L = unpack(select(2, ...))
 
 if H.client == "frFR" then
+	L.GUID_ISNIL = "GUID non-valide pour l'unit\195\169 %s"
 	L.INITIALIZE_PREDEFINEDLISTNOTFOUND = "La liste de sorts pr\195\169d\195\169finis n'a pas \195\169t\195\169 trouv\195\169e"
 	L.INITIALIZE_PREDEFINEDIDNOTFOUND = "ID %s inexistant dans la liste de sorts pr\195\169d\195\169finis"
 	L.CHECKSPELL_NOSPELLSFOUND = "Aucun sort configur\195\169 pour cette sp\195\169"
