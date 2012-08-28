@@ -12,13 +12,13 @@ C["general"] = {
 	showButtonTooltip = true,			-- display heal buttons tooltip
 	buttonTooltipAnchor = nil, 			-- debuff tooltip anchor (nil means button itself)--(ElvUI and _G["TooltipHolder"]) or (Tukui and _G["TukuiTooltipAnchor"])
 
-	showGlow = false,					-- show glowing spell when proc activated -> !!!! protected calls exception
+	showGlow = false,					-- show glowing spell when proc activated -> !!!! protected calls exception  seems to work if using Tukui_Healium
 
 	showBuff = true,					-- display buff castable by configured spells
 	maxBuffCount = 6,					-- maximum number of buff displayed
 	--buffSpacing = 2,					-- distance between 2 buffs
 	showBuffTooltip = true,				-- display buff tooltip
-	buffTooltipAnchor = nil,			-- debuff tooltip anchor (nil means buff itself)
+	buffTooltipAnchor = nil,			-- buff tooltip anchor (nil means buff itself)
 
 	showDebuff = true,					-- display debuff
 	maxDebuffCount = 8,					-- maximum number of debuff displayed

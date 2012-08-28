@@ -48,7 +48,9 @@ end
 
 -- Get book spell id from spell name
 function Private.GetSpellBookID(spellName)
-	for i = 1, 300, 1 do
+	--for i = 1, 300, 1 do
+	local i = 1
+	while true do
 		local spellBookName = GetSpellBookItemName(i, BOOKTYPE_SPELL)--SpellBookFrame.bookType)
 		if not spellBookName then break end
 		if spellName == spellBookName then
@@ -58,6 +60,7 @@ function Private.GetSpellBookID(spellName)
 			end
 			return nil
 		end
+		i = i + 1
 	end
 	return nil
 end

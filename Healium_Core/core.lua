@@ -2,11 +2,8 @@
 -- Healium
 -------------------------------------------------------
 
--- TODO
--- buttonHeader.hInitialized and buttonHeader.hInvalid   still useful???
--- add H:RegisterSpellList(spellListName, spellList) -> add new spell list to SpecSettings
--- add H:ActivateSpellList(spellListName [, spellList]) -> activate selected spell list
---		InitializeSettings and GetSpecSettings should be modified
+-- TODO:
+-- move filters in Tukui_Healium
 
 --local __TEST_SHIELDS = true
 
@@ -18,6 +15,10 @@
 --	register a frame style
 -- H:RegisterFrame(frame, styleName)
 --	register a frame in Healium
+-- H:RegisterSpellList(name, spellList [, buffList])
+--	register a triplet name+spellList+buffList (perform a DeepCopy), returns false if modifying current spell list while in combat
+-- H:ActivateSpellList(name)
+--	activate a registered spell list, returns false if in combat
 -- H:DumpInformation()
 --	return a table with every available informations about frames/buttons/buffs/debuffs
 --[[
@@ -48,7 +49,6 @@ H:GetDebuff(frame, index | "FIRST" | "LAST")
 
 local ADDON_NAME, ns = ...
 local H, C, L = unpack(select(2,...))
-H.patch, H.buildtext, H.releasedate, H.toc = GetBuildInfo()
 
 -- Aliases
 local Private = ns.Private
@@ -67,8 +67,22 @@ local ActivateSecondarySpecSpellName = GetSpellInfo(63644)
 --
 local UpdateDelay = 0.2
 local HealiumInitialized = false
-local SpecSettings = nil
-local ButtonHeaders = {} -- List of header for button, store hSpellID, hSpellName, hMacroName, hOOM, hInvalid, ...
+
+local SpellListCache = {} -- List of available spellList, CurrentSpellList points to this list
+-- local CurrentSpellList = {
+	-- spells = nil, -- List of spells
+	-- buffs = nil, -- List of buffs to monitor not related to a spell in spells
+	-- hasBuffPrereq = false,
+	-- hasDebuffPrereq = false,
+	-- hasTransforms = false,
+-- }
+--local SpecSettings = nil
+local ButtonHeaders = {} -- List of header for button, store ptr to SpellList, hSpellID, hSpellName, hMacroName, hOOM, ...
+--local BuffList = nil -- List of buffs to monitor not related to a spell in ButtonHeaders
+--local SpellList = nil -- List of spells in current config
+local CurrentSpellListName = nil -- name of current spell list
+local CurrentSpellList = nil -- current spell list (ptr to SpellListCache)
+
 local EventsHandler = CreateFrame("Frame")
 
 -- Fields added to unitframe
@@ -90,9 +104,7 @@ local EventsHandler = CreateFrame("Frame")
 --		spellIcon: added in InitializeSettings
 --		transforms.spellName: added in InitializeSettings
 -- ButtonHeader fields (contains only valid spell/macro)
---		hInitialized: true if button must be shown
---		hInvalid: true if button hSpell/hSpellID/hSpellName/hMacroName are invalid/not known
---		hSpell: copy of spell setting from SpecSetting
+--		hSpell: ptr to spell setting from SpecSetting
 --		hOOM: true if 'player' has enough mana to cast the spell (replace cacheOOM)
 --		hType: "SPELL" or "MACRO", used to set button type attribute
 --		hIcon: current button texture (updated when transformed)
@@ -171,12 +183,12 @@ end
 -------------------------------------------------------
 -- Helpers
 -------------------------------------------------------
--- Return invalid, spellID, spellName, macroName, icon, OOM, spellSetting
+-- Return spellID, spellName, macroName, icon, OOM, spellSetting
 local function GetButtonSpellInfo(button)
 	if not button.hHeaderIndex or button.hHeaderIndex == 0 then return end
 	local header = ButtonHeaders[button.hHeaderIndex]
-	if not header or not header.hInitialized then return end
-	return header.hInvalid, header.hSpellID, header.hSpellName, header.hMacroName, header.hIcon, header.hOOM, header.hSpell
+	if not header then return end
+	return header.hSpellID, header.hSpellName, header.hMacroName, header.hIcon, header.hOOM, header.hSpell
 end
 
 -------------------------------------------------------
@@ -323,44 +335,43 @@ end
 -------------------------------------------------------
 -- Settings
 -------------------------------------------------------
+
+--[[
 -- Check spell settings
 local function CheckSpellSettings()
 	-- Check settings
-	if SpecSettings then
-		if not SpecSettings.spells then
+	if CurrentSpellList then
+		if not CurrentSpellList.spells then
 			WARNING(L.CHECKSPELL_NOSPELLSFOUND)
 		else
-			for _, spellSetting in ipairs(SpecSettings.spells) do
+			for _, spellSetting in ipairs(CurrentSpellList.spells) do
 				if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
 					local name = GetSpellInfo(spellSetting.spellID)
 					if name then
-						ERROR(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
+						WARNING(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
 					else
 						ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
 					end
 				elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
-					ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
+					WARNING(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
 				end
 			end
 		end
 	end
 end
+--]]
 
--- Get settings for current spec and assign it to SpecSettings (if not already set)
-local function GetSpecSettings()
-	if SpecSettings then return end
-	if not C[H.myclass] then return end
-	-- local ptt = GetPrimaryTalentTree()
-	-- if not ptt then return end
-	-- SpecSettings = C[H.myclass][ptt]
-	local spec = GetSpecialization() -- MoP
-	if not spec then return end
-	SpecSettings = C[H.myclass][spec]
-end
-
-local function ResetSpecSettings()
-	SpecSettings = nil
-end
+-- -- TODO: remove this and add RegisterSpellList, ActivateSpellList in TukuiHealium
+-- -- Get settings for current spec and assign it to CurrentSpellList (if not already set)
+-- local function GetSpellListForCurrentSpec()
+	-- --CurrentSpellList = nil
+	-- -- if not C[H.myclass] then return end
+	-- -- local spec = GetSpecialization()
+	-- -- if not spec then return end
+	-- -- CurrentSpellList = C[H.myclass][spec]
+	-- local spec = GetSpecialization()
+	-- H:ActivateSpellList(spec)
+-- end
 
 -- Create a list with spellID and spellName from a list of spellID (+ remove duplicates)
 local function CreateFilterList(list, listName)
@@ -432,9 +443,16 @@ local function InitializeSettings()
 		-- end
 	-- end
 
+	-- TODO: remove following loop
 	-- Add spellName/spellIcon to spell/transform/buff list and copy predefined spells
+--[[
 	if C[H.myclass] then
 		for specIndex, specSetting in pairs(C[H.myclass]) do
+			if specIndex ~= "predefined" then
+				H:RegisterSpellList(specIndex, specSetting.spells, specSetting.buffs)
+			end
+--]]
+--[[
 			-- spells
 			if specSetting.spells then
 				local buffPrereqFound = false
@@ -490,8 +508,11 @@ local function InitializeSettings()
 				end
 				specSetting.buffs = buffs
 			end
+--]]
+--[[
 		end
 	end
+--]]
 end
 
 -------------------------------------------------------
@@ -499,28 +520,30 @@ end
 -------------------------------------------------------
 -- Heal button tooltip
 local function ButtonOnEnter(self)
-	-- Heal tooltips are anchored to tukui tooltip
 	local tooltipAnchor = C.general.buttonTooltipAnchor or self
 	GameTooltip_SetDefaultAnchor(GameTooltip, tooltipAnchor)
 	--GameTooltip:SetOwner(tooltipAnchor, "ANCHOR_NONE")
 	GameTooltip:ClearLines()
-	local invalid, spellID, spellName, macroName = GetButtonSpellInfo(self)
-	if invalid then
-		if spellID and spellName then
-			GameTooltip:AddLine(string.format(L.TOOLTIP_UNKNOWNSPELL, spellName, spellID), 1, 1, 1)
-		elseif macroName then
-			GameTooltip:AddLine(string.format(L.TOOLTIP_UNKNOWN_MACRO, macroName), 1, 1, 1)
-		else
-			GameTooltip:AddLine(L.TOOLTIP_UNKNOWN, 1, 1, 1)
-		end
-	else
+	--local invalid, spellID, spellName, macroName = GetButtonSpellInfo(self)
+	local spellID, spellName, macroName = GetButtonSpellInfo(self)
+	-- if invalid then
+		-- if spellID and spellName then
+			-- GameTooltip:AddLine(string.format(L.TOOLTIP_UNKNOWNSPELL, spellName, spellID), 1, 1, 1)
+		-- elseif macroName then
+			-- GameTooltip:AddLine(string.format(L.TOOLTIP_UNKNOWN_MACRO, macroName), 1, 1, 1)
+		-- else
+			-- GameTooltip:AddLine(L.TOOLTIP_UNKNOWN, 1, 1, 1)
+		-- end
+	-- else
 		if spellID then
 			GameTooltip:SetSpellByID(spellID)
 		elseif macroName then
 			spellName = GetMacroSpell(macroName)
 			if spellName then
-				spellID = GetSpellID(spellName) -- !!! this build a list with a size of 2Mb
-				GameTooltip:SetSpellByID(spellID)
+				--spellID = GetSpellID(spellName) -- !!! this build a list with a size of 2Mb
+				--GameTooltip:SetSpellByID(spellID)
+				spellID = GetSpellBookID(spellName) -- Memory optimization
+				GameTooltip:SetSpellBookItem(spellID, BOOKTYPE_SPELL)
 			end
 			GameTooltip:AddLine(string.format(L.TOOLTIP_MACRO, macroName), 1, 1, 1)
 		else
@@ -535,7 +558,7 @@ local function ButtonOnEnter(self)
 		else
 			GameTooltip:AddLine(string.format(L.TOOLTIP_TARGET, unitName), 1, 1, 1)
 		end
-	end
+	--end
 	GameTooltip:Show()
 end
 
@@ -715,24 +738,30 @@ end
 local function UpdateButtonColor(frame, button)
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonColor")
 	local unit = frame.unit
-	local invalid, _, _, _, _, OOM, spellSetting = GetButtonSpellInfo(button)
+	--local invalid, _, _, _, _, OOM, spellSetting = GetButtonSpellInfo(button)
+	local _, _, _, _, OOM, spellSetting = GetButtonSpellInfo(button)
 
 	if frame.hDisabled and (not UnitIsConnected(unit) or not spellSetting or ((not spellSetting.rez or spellSetting.rez == false) and UnitIsDeadOrGhost(unit))) then
 		-- not (rez and unit is dead) -> color in red
 		button.texture:SetVertexColor(unpack(C.colors.unitDead))
-	elseif button.hOOR and not invalid then
+	--elseif button.hOOR and not invalid then
+	elseif button.hOOR then
 		-- out of range -> color in red
 		button.texture:SetVertexColor(unpack(C.colors.unitOOR))
-	elseif button.hPrereqFailed and not invalid then
+	--elseif button.hPrereqFailed and not invalid then
+	elseif button.hPrereqFailed then
 		-- button disabled -> color in gray
 		button.texture:SetVertexColor(unpack(C.colors.spellPrereqFailed))
-	elseif button.hNotUsable and not invalid then
+	--elseif button.hNotUsable and not invalid then
+	elseif button.hNotUsable then
 		-- button not usable -> color in medium red
 		button.texture:SetVertexColor(unpack(C.colors.spellNotUsable))
-	elseif OOM and not invalid then
+	--elseif OOM and not invalid then
+	elseif OOM then
 		-- no mana -> color in blue
 		button.texture:SetVertexColor(unpack(C.colors.OOM))
-	elseif button.hDispelHighlight ~= "none" and not invalid then
+	--elseif button.hDispelHighlight ~= "none" and not invalid then
+	elseif button.hDispelHighlight ~= "none" then
 		-- dispel highlight -> color with debuff color
 		local debuffColor = DebuffTypeColor[button.hDispelHighlight] or DebuffTypeColor["none"]
 		button:SetBackdropColor(debuffColor.r, debuffColor.g, debuffColor.b)
@@ -767,7 +796,6 @@ local function UpdateFrameButtonsColor(frame)
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateFrameButtonsColor")
 	if not frame.hButtons then return end
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 		local button = frame.hButtons[index]
 		UpdateButtonColor(frame, button)
 	end
@@ -799,7 +827,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 		local buffIndex = 1
 		for i = 1, 40, 1 do
 			-- get buff, don't filter on PLAYER because we need a full list of buff to check prereq
-			local filter = (SpecSettings and not SpecSettings.hasBuffPrereq and not SpecSettings.buffs) and "PLAYER|CANCELLABLE" or "CANCELLABLE" -- RAID cannot be used because Prayer of Mending buff is tagged as selfbuff :/
+			local filter = (CurrentSpellList and not CurrentSpellList.hasBuffPrereq and not CurrentSpellList.buffs) and "PLAYER|CANCELLABLE" or "CANCELLABLE" -- RAID cannot be used because Prayer of Mending buff is tagged as selfbuff :/
 			local name, _, icon, count, _, duration, expirationTime, unitCaster, _, _, spellID = UnitBuff(unit, i, filter)
 			if not name then break end
 			if not ListBuffs[i] then ListBuffs[i] = {} end
@@ -810,8 +838,8 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 			local filtered = true
 			if C.general.showBuff == true and frame.hBuffs and buffIndex <= C.general.maxBuffCount then
 				-- check buffs list
-				if SpecSettings and SpecSettings.buffs and unitCaster == "player" then
-					for index, buffSetting in pairs(SpecSettings.buffs) do
+				if CurrentSpellList and CurrentSpellList.buffs and unitCaster == "player" then
+					for index, buffSetting in pairs(CurrentSpellList.buffs) do
 						if buffSetting.spellName == name then
 							filtered = false
 							break
@@ -821,7 +849,6 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				-- check buff castable by player
 				if filtered and unitCaster == "player" then 
 					for index, buttonHeader in ipairs(ButtonHeaders) do
-						if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 						local spellName = buttonHeader.hSpellName
 						if spellName == name then
 							filtered = false
@@ -882,7 +909,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 			local dispellable = false -- default: non-dispellable
 			if debuffType then
 				for _, buttonHeader in ipairs(ButtonHeaders) do
-					local spellSetting = buttonHeader.hInitialized and buttonHeader.hSpell
+					local spellSetting = buttonHeader.hSpell
 					if not spellSetting then break end -- uninitialized headers are grouped at the end
 					if spellSetting.dispels then
 						local canDispel = type(spellSetting.dispels[debuffType]) == "function" and spellSetting.dispels[debuffType]() or spellSetting.dispels[debuffType]
@@ -955,7 +982,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 		local isUnitInRange = UnitInRange(unit)
 		local playSound = false -- play sound only if at least one debuff dispellable not filtered and option activated
 		for index, buttonHeader in ipairs(ButtonHeaders) do
-			local spellSetting = buttonHeader.hInitialized and buttonHeader.hSpell
+			local spellSetting = buttonHeader.hSpell
 			if not spellSetting then break end -- uninitialized headers are grouped at the end
 			local button = frame.hButtons[index]
 			local change = false -- if something has changed on a button, recolor it
@@ -1118,7 +1145,6 @@ local function UpdateGlowingByHeader(index, buttonHeader)
 end
 local function UpdateGlowing()
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 		UpdateGlowingByHeader(index, buttonHeader)
 	end
 end
@@ -1154,7 +1180,6 @@ local function UpdateCooldowns()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateCooldowns")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateCooldowns")
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 		UpdateCooldownByHeader(index, buttonHeader)
 	end
 	--PerformanceCounter:Stop(ADDON_NAME, "UpdateCooldowns")
@@ -1186,7 +1211,6 @@ local function UpdateOOM()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateOOM")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateOOM")
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 		UpdateOOMByHeader(index, buttonHeader)
 	end
 	--PerformanceCounter:Stop(ADDON_NAME, "UpdateOOM")
@@ -1197,7 +1221,6 @@ local function UpdateOORSpells()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateOORSpells")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateOORSpells")
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 		local spellName = buttonHeader.hSpellName
 		if buttonHeader.hMacroName then
 			local macroID = GetMacroIndexByName(buttonHeader.hMacroName)
@@ -1215,22 +1238,22 @@ end
 local function UpdateTransforms()
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateTransforms")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateTransforms")
-	if not SpecSettings or not SpecSettings.hasTransforms then return end
+	if not CurrentSpellList or not CurrentSpellList.hasTransforms then return end
 	-- If transform found and buff matches then update icon
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		local spellSetting = buttonHeader.hInitialized and buttonHeader.hSpell
-print("UpdateTransforms 1 "..tostring(spellSetting).."  "..tostring(buttonHeader.hInitialized).."  "..tostring(buttonHeader.hSpell))
+		local spellSetting = buttonHeader.hSpell
+--print("UpdateTransforms 1 "..tostring(spellSetting).."  "..tostring(buttonHeader.hSpell))
 		if not spellSetting then break end -- uninitialized headers are grouped at the end
 		if spellSetting.transforms and spellSetting.spellID then
-print("UpdateTransforms 2")
+--print("UpdateTransforms 2")
 			local transformToSpellID = spellSetting.spellID
 			local transformToSpellName = spellSetting.spellName
 			for _, transformSetting in pairs(spellSetting.transforms) do
-print("UpdateTransforms 3")
+--print("UpdateTransforms 3")
 				local buffTransformSpellName = transformSetting.buffSpellName
 				local name = UnitBuff("player", buffTransformSpellName) -- check if player is affected by buff
 				if name then
-print("UpdateTransforms 4")
+--print("UpdateTransforms 4")
 					transformToSpellID = transformSetting.spellID
 					transformToSpellName = transformSetting.spellName
 					break
@@ -1390,10 +1413,8 @@ local function UpdateFrameDebuffsPosition(frame)
 	--DEBUG(1000,"Update debuff position for "..frame:GetName())
 	local style = Styles[frame.hStyle]
 	local anchor = frame
-	-- TODO: when ButtonHeaders's length will be equal to SpecSettings.spells's length, use ButtonHeader instead
 	if ButtonHeaders then
 		for index, buttonHeader in ipairs(ButtonHeaders) do
-			if not buttonHeader.hInitialized then break end -- uninitialized headers are grouped at the end
 			anchor = frame.hButtons[index]
 		end
 	end
@@ -1416,24 +1437,16 @@ local function UpdateFrameButtonsAttributes(frame)
 	GlowingSpells = {} -- reset Glow
 	for i, button in ipairs(frame.hButtons) do
 		local buttonHeader = (i <= #ButtonHeaders) and ButtonHeaders[i]
---print(i.."  "..tostring(buttonHeader).."  "..tostring(buttonHeader and buttonHeader.hInitialized))
---print("UpdateFrameButtonsAttributes:"..tostring(frame:GetName()).."  "..tostring(i).."  "..tostring(buttonHeader and buttonHeader.hInitialized or ""))
-		if buttonHeader and buttonHeader.hInitialized == true then
-			if buttonHeader.hInvalid == true then
-				button.hHeaderIndex = nil
-				button.texture:SetTexture("Interface/Icons/INV_Misc_QuestionMark")
-				button:SetAttribute("type", nil)
-				button:SetAttribute("spell", nil)
-				button:SetAttribute("macro", nil)
-			else
-				--local name = buttonHeader.hSpellName and buttonHeader.hSpellName or buttonHeader.hMacroName
-				local name = buttonHeader.hSpellName or buttonHeader.hMacroName
-				button.hHeaderIndex = i
-				button.texture:SetTexture(buttonHeader.hIcon)
+--print(i.."  "..tostring(buttonHeader).."  "..tostring(buttonHeader))
+--print("UpdateFrameButtonsAttributes:"..tostring(frame:GetName()).."  "..tostring(i).."  "..tostring(buttonHeader or ""))
+		if buttonHeader then
+			--local name = buttonHeader.hSpellName and buttonHeader.hSpellName or buttonHeader.hMacroName
+			local name = buttonHeader.hSpellName or buttonHeader.hMacroName
+			button.hHeaderIndex = i
+			button.texture:SetTexture(buttonHeader.hIcon)
 
-				button:SetAttribute("type", buttonHeader.hType)
-				button:SetAttribute(buttonHeader.hType, name)
-			end
+			button:SetAttribute("type", buttonHeader.hType)
+			button:SetAttribute(buttonHeader.hType, name)
 			button:Show()
 		else
 			button.hHeaderIndex = nil
@@ -1445,69 +1458,15 @@ end
 
 -- Fill button header with spellID, spellName, macroName, OOM, ...
 local function UpdateButtonHeaders()
---print("UpdateButtonHeaders")
-	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonHeaders")
-	-- for index = 1, C.general.maxButtonCount, 1 do
-		-- if not ButtonHeaders[index] then ButtonHeaders[index] = {} end
-		-- local buttonHeader = ButtonHeaders[index]
-		-- if SpecSettings and SpecSettings.spells and index <= #SpecSettings.spells then
-			-- local spellSetting = SpecSettings.spells[index]
-			-- buttonHeader.hInitialized = true
-			-- buttonHeader.hInvalid = true
-			-- --buttonHeader.hSpell = DeepCopy(spellSetting)
-			-- buttonHeader.hSpell = spellSetting -- no need to copy
-			-- buttonHeader.hOOM = false
-			-- buttonHeader.hType = nil
-			-- buttonHeader.hIcon = nil
-			-- buttonHeader.hSpellID = nil
-			-- buttonHeader.hSpellName = nil
-			-- buttonHeader.hMacroName = nil
-
-			-- if spellSetting.spellID then
-				-- if GetSkillType(spellSetting.spellID) then
-					-- buttonHeader.hInvalid = false
-					-- buttonHeader.hType = "spell"
-					-- --buttonHeader.hSpellName, _, buttonHeader.hIcon = GetSpellInfo(spellSetting.spellID)
-					-- buttonHeader.hSpellID = spellSetting.spellID
-					-- buttonHeader.hSpellName = spellSetting.spellName
-					-- buttonHeader.hIcon = select(3, GetSpellInfo(spellSetting.spellID))
-				-- end
-			-- elseif spellSetting.macroName then
-				-- if GetMacroIndexByName(spellSetting.macroName) > 0 then
-					-- buttonHeader.hInvalid = false
-					-- buttonHeader.hType = "macro"
-					-- buttonHeader.hMacroName = spellSetting.macroName
-					-- --buttonHeader.hIcon = select(2, GetMacroInfo(spellSetting.macroName))
-					-- if not spellSetting.macroIcon then
-						-- local macroIcon = select(2, GetMacroInfo(spellSetting.macroName))
-						-- spellSetting.macroIcon = macroIcon
-					-- end
-					-- buttonHeader.hIcon = spellSetting.macroIcon
-				-- end
-			-- end
-		-- else
-			-- buttonHeader.hInitialized = false
-			-- buttonHeader.hInvalid = true
-			-- buttonHeader.hOOM = false
-			-- buttonHeader.hSpell = nil
-			-- buttonHeader.hType = nil
-			-- buttonHeader.hIcon = nil
-			-- buttonHeader.hSpellID = nil
-			-- buttonHeader.hSpellName = nil
-			-- buttonHeader.hMacroName = nil
-		-- end
-	-- end
-	ButtonHeaders = {}
+	ButtonHeaders = {} -- Reset headers
 	local headerIndex = 1
 	for index = 1, C.general.maxButtonCount, 1 do
-		local spellSetting = (SpecSettings and SpecSettings.spells and (index <= #SpecSettings.spells)) and SpecSettings.spells[index]
+		local spellSetting = (CurrentSpellList and CurrentSpellList.spells and (index <= #CurrentSpellList.spells)) and CurrentSpellList.spells[index]
 		if spellSetting then
 			local buttonHeader = nil
 			if spellSetting.spellID then
 				if GetSkillType(spellSetting.spellID) then
 					buttonHeader = {}
-					buttonHeader.hInitialized = true
-					buttonHeader.hInvalid = false
 					buttonHeader.hSpell = spellSetting -- no need to copy
 					buttonHeader.hType = "spell"
 					--buttonHeader.hSpellName, _, buttonHeader.hIcon = GetSpellInfo(spellSetting.spellID)
@@ -1518,27 +1477,25 @@ local function UpdateButtonHeaders()
 			elseif spellSetting.macroName then
 				if GetMacroIndexByName(spellSetting.macroName) > 0 then
 					buttonHeader = {}
-					buttonHeader.hInitialized = true
-					buttonHeader.hInvalid = false
 					buttonHeader.hSpell = spellSetting -- no need to copy
 					buttonHeader.hType = "macro"
 					buttonHeader.hMacroName = spellSetting.macroName
-					--buttonHeader.hIcon = select(2, GetMacroInfo(spellSetting.macroName))
-					if not spellSetting.macroIcon then
-						local macroIcon = select(2, GetMacroInfo(spellSetting.macroName))
-						spellSetting.macroIcon = macroIcon
-					end
-					buttonHeader.hIcon = spellSetting.macroIcon
+					buttonHeader.hIcon = select(2, GetMacroInfo(spellSetting.macroName))
+					-- if not spellSetting.macroIcon then
+						-- local macroIcon = select(2, GetMacroInfo(spellSetting.macroName))
+						-- spellSetting.macroIcon = macroIcon
+					-- end
+					--buttonHeader.hIcon = spellSetting.macroIcon
 				end
 			end
-			if buttonHeader then
+			if buttonHeader then -- if button header created, add it to button header list
 				ButtonHeaders[headerIndex] = buttonHeader
 				headerIndex = headerIndex + 1
 			-- else
 -- print("invalid spell or macro:"..tostring(spellSetting.spellID).."  "..tostring(spellSetting.macroName))
 			end
 		-- else
--- print("spell setting not found:"..tostring(SpecSettings).."  "..tostring(SpecSettings.spells).."  "..tostring(index <= #SpecSettings.spells).."  "..tostring(SpecSettings.spells[index]))
+-- print("spell setting not found:"..tostring(CurrentSpellList).."  "..tostring(CurrentSpellList.spells).."  "..tostring(index <= #CurrentSpellList.spells).."  "..tostring(CurrentSpellList.spells[index]))
 		end
 	end
 end
@@ -1873,8 +1830,6 @@ function H:DumpInformation(onlyShown)
 	for i, header in ipairs(ButtonHeaders) do
 		infos.Headers[i] = {}
 		local infoHeader = infos.Headers[i]
-		infoHeader.Initialized = header.hInitialized
-		infoHeader.Invalid = header.hInvalid
 		infoHeader.SpellID = header.hSpellID
 		infoHeader.SpellName = header.hSpellName
 		infoHeader.MacroName = header.hMacroName
@@ -1894,7 +1849,8 @@ function H:DumpInformation(onlyShown)
 				local button = frame.hButtons[i]
 				if not onlyShown or button:IsShown() then
 					unitInfo.Buttons[i] = {}
-					local invalid, spellID, spellName, macroName, icon, OOM = GetButtonSpellInfo(button)
+					--local invalid, spellID, spellName, macroName, icon, OOM = GetButtonSpellInfo(button)
+					local spellID, spellName, macroName, icon, OOM = GetButtonSpellInfo(button)
 					local buttonInfo = unitInfo.Buttons[i]
 					buttonInfo.Texture = icon
 					buttonInfo.IsShown = button:IsShown()
@@ -1905,7 +1861,6 @@ function H:DumpInformation(onlyShown)
 					buttonInfo.NotUsable = button.hNotUsable
 					buttonInfo.DispelHighlight = button.hDispelHighlight
 					buttonInfo.OOR = button.hOOR
-					buttonInfo.Invalid = invalid
 				end
 			end
 			unitInfo.Buffs = {}
@@ -1940,31 +1895,24 @@ end
 -------------------------------------------------------
 -- Events handler
 -------------------------------------------------------
+if __TEST_SHIELDS then
 function EventsHandler:PLAYER_ENTERING_WORLD()
 	EventsHandler:UnregisterEvent("PLAYER_ENTERING_WORLD") -- fire only once
-	----EventsHandler:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED") -- no need to handle this before being in the world :)
-	--EventsHandler:RegisterEvent("PLAYER_TALENT_UPDATE")
-	EventsHandler:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-	--EventsHandler:RegisterEvent("CHARACTER_POINTS_CHANGED")
-	--EventsHandler:RegisterEvent("LEARNED_SPELL_IN_TAB")
-	--EventsHandler:RegisterEvent("UNIT_SPELLCAST_SENT")
-	--EventsHandler:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-	--EventsHandler:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
-	ResetSpecSettings()
-	GetSpecSettings()
-	CheckSpellSettings()
-	UpdateButtonHeaders()
-	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	UpdateTransforms()
-	UpdateCooldowns()
+	--EventsHandler:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 
-	if __TEST_SHIELDS then
-		print("__TEST_SHIELDS")
-		EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-	end
+	--GetSpellListForCurrentSpec()
+	----CheckSpellSettings()
+	--UpdateButtonHeaders()
+	--ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	--ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	--ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	--UpdateTransforms()
+	--UpdateCooldowns()
+
+	print("__TEST_SHIELDS")
+	EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+
 	-- -- TEST
 	-- if C.general.showShields == true then
 		-- if IsValidZoneForShields() then
@@ -1974,25 +1922,15 @@ function EventsHandler:PLAYER_ENTERING_WORLD()
 		-- end
 	-- end
 end
+end
 
-local function RaidCompositionModified()
+function EventsHandler:GROUP_ROSTER_UPDATE()
 	-- TODO: event is fired once by member -> optimize
 	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
 	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 	UpdateTransforms()
 	UpdateCooldowns()
-end
--- if H.toc < 50000 then -- MoP
--- function EventsHandler:PARTY_MEMBERS_CHANGED()
-	-- RaidCompositionModified()
--- end
--- function EventsHandler:RAID_ROSTER_UPDATE()
-	-- RaidCompositionModified()
--- end
--- else
-function EventsHandler:GROUP_ROSTER_UPDATE()
-	RaidCompositionModified()
 end
 -- end
 
@@ -2091,22 +2029,6 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster,
 	end
 end
 
--- function EventsHandler:ACTIVE_TALENT_GROUP_CHANGED()
-	-- -- if not EventsHandler.hFirstActiveTalentGroupChanged then -- skip first call
-		-- -- EventsHandler.hFirstActiveTalentGroupChanged = true
-		-- -- return
-	-- -- end
-	-- ResetSpecSettings()
-	-- GetSpecSettings()
-	-- CheckSpellSettings()
-	-- UpdateButtonHeaders()
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	-- UpdateTransforms()
-	-- UpdateCooldowns()
--- end
-
 function EventsHandler:SPELL_UPDATE_COOLDOWN()
 	UpdateCooldowns()
 end
@@ -2114,7 +2036,7 @@ end
 function EventsHandler:UNIT_AURA(unit)
 	ForEachUnitframeWithUnit(unit, UpdateFrameBuffsDebuffsPrereqs)
 	if unit == "player" then
-		UpdateTransforms()
+		UpdateTransforms() -- buff/debuff may affect transformed spell
 	end
 end
 
@@ -2157,84 +2079,14 @@ function EventsHandler:SPELL_ACTIVATION_OVERLAY_GLOW_HIDE(spellID)
 	UpdateGlowing()
 end
 
--- function EventsHandler:UNIT_SPELLCAST_SENT(unit, spellName)
-	-- if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
-		-- EventsHandler.hRespecing = 1
-	-- end
--- end
+-- -- TODO: remove this and add RegisterSpellList, ActivateSpellList in TukuiHealium
+-- function EventsHandler:PLAYER_SPECIALIZATION_CHANGED(unit)
+-- print("PLAYER_SPECIALIZATION_CHANGED: "..tostring(unit))
+	-- if unit ~= "player" then return end
+	-- if InCombatLockdown() then return end -- SHOULD NEVER HAPPEN
 
--- function EventsHandler:UNIT_SPELLCAST_INTERRUPTED(unit, spellName)
-	-- if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
-		-- EventsHandler.hRespecing = nil --> respec stopped
-	-- end
--- end
-
--- function EventsHandler:UNIT_SPELLCAST_SUCCEEDED(unit, spellName)
-	-- if unit == "player" and (spellName == ActivatePrimarySpecSpellName or spellName == ActivateSecondarySpecSpellName) then
-		-- EventsHandler.hRespecing = nil --> respec stopped
-	-- end
--- end
-
--- function EventsHandler:PLAYER_TALENT_UPDATE()
--- print("PLAYER_TALENT_UPDATE")
-	-- if EventsHandler.hRespecing and EventsHandler.hRespecing == 2 then -- respec finished
-		-- ResetSpecSettings()
-		-- GetSpecSettings()
-		-- CheckSpellSettings()
-		-- UpdateButtonHeaders()
-		-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-		-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-		-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-		-- UpdateTransforms()
-		-- UpdateCooldowns()
-		-- EventsHandler.hRespecing = nil -- no respec running
-	-- elseif EventsHandler.hRespecing and EventsHandler.hRespecing == 1 then -- respec not yet finished
-		-- EventsHandler.hRespecing = 2 -- respec finished
-	-- -- else -- respec = nil, not respecing (called while connecting)
-		-- -- GetSpecSettings()
-		-- -- ForEachUnitframe(UpdateFrameButtonsAttributes)
-		-- -- ForEachUnitframe(UpdateFrameDebuffsPosition)
-		-- -- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-		-- -- UpdateTransforms()
-		-- -- UpdateCooldowns()
-	-- end
--- end
-
-function EventsHandler:PLAYER_SPECIALIZATION_CHANGED(unit)
-print("PLAYER_SPECIALIZATION_CHANGED: "..tostring(unit))
-	if unit ~= "player" then return end
-	if InCombatLockdown() then return end -- SHOULD NEVER HAPPEN
-	ResetSpecSettings()
-	GetSpecSettings()
-	CheckSpellSettings()
-	UpdateButtonHeaders()
-	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	UpdateTransforms()
-	UpdateCooldowns()
-end
-
--- function EventsHandler:CHARACTER_POINTS_CHANGED(arg1)
--- print("CHARACTER_POINTS_CHANGED")
-	-- if arg1 ~= -1 then return end
-	-- if InCombatLockdown() then return end
-	-- ResetSpecSettings()
-	-- GetSpecSettings()
-	-- CheckSpellSettings()
-	-- UpdateButtonHeaders()
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	-- UpdateTransforms()
-	-- UpdateCooldowns()
--- end
-
--- function EventsHandler:LEARNED_SPELL_IN_TAB(arg1, arg2)
--- print("LEARNED_SPELL_IN_TAB")
-	-- ResetSpecSettings()
-	-- GetSpecSettings()
-	-- CheckSpellSettings()
+	-- GetSpellListForCurrentSpec()
+	-- --CheckSpellSettings()
 	-- UpdateButtonHeaders()
 	-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
 	-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
@@ -2288,16 +2140,13 @@ function H:Initialize(config)
 
 	-- Create event handler
 	EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+if __TEST_SHIELDS then
 	EventsHandler:RegisterEvent("PLAYER_ENTERING_WORLD")
--- if H.toc < 50000 then -- MoP
-	-- EventsHandler:RegisterEvent("RAID_ROSTER_UPDATE")
-	-- EventsHandler:RegisterEvent("PARTY_MEMBERS_CHANGED")
--- else
+end
 	EventsHandler:RegisterEvent("GROUP_ROSTER_UPDATE")
--- end
 	EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 	EventsHandler:RegisterEvent("UNIT_AURA")
-	if C.general.showShields == true then
+	if C.general.showOOM == true then
 		EventsHandler:RegisterEvent("UNIT_POWER")
 		EventsHandler:RegisterEvent("UNIT_MAXPOWER")
 	end
@@ -2312,9 +2161,142 @@ function H:Initialize(config)
 
 	-- Set OnEvent handlers
 	EventsHandler:SetScript("OnEvent", function(self, event, ...)
+--print("Event: "..tostring(event).."  "..tostring(self[event]))
 		self[event](self, ...)
 	end)
 
 	EventsHandler.hTimeSinceLastUpdate = GetTime()
 	EventsHandler:SetScript("OnUpdate", OnUpdate)
+end
+
+-------------------------------------------------------
+-- Spell List
+-------------------------------------------------------
+function H:RegisterSpellList(name, spellList, buffList)
+	-- Cannot modify current setting while in combat
+	if name == CurrentSpellListName and InCombatLockdown() then
+		ERROR(L.SPELLLIST_INCOMBAT)
+		return false
+	else
+		CurrentSpellList = nil -- deactivate current spell list to avoid conflict
+		-- TODO: stop every functions using CurrentSpellList and set a lock variable to avoid running functions using CurrentSpellList
+	end
+
+--print("Register SpellList "..tostring(name))
+
+	-- Add spell list
+	SpellListCache[name] = {} -- TODO: compare with previous entry and update only different fields
+	local entry = SpellListCache[name]
+
+	-- Spells
+	if not spellList then
+		WARNING(L.CHECKSPELL_NOSPELLSFOUND)
+	else
+		-- Copy spell list
+		entry.spells = DeepCopy(spellList)
+		-- Gather additional informations about spell list
+		local buffPrereqFound = false
+		local debuffPrereqFound = false
+		local transformsFound = false
+		for index, spellSetting in ipairs(entry.spells) do
+			-- Copy predefined spell
+			if spellSetting.id then
+				if not C[H.myclass].predefined then
+					ERROR(L.INITIALIZE_PREDEFINEDLISTNOTFOUND)
+				end
+				local predefined = C[H.myclass].predefined[spellSetting.id]
+				if predefined then
+					entry.spells[index] = DeepCopy(predefined)
+					spellSetting = entry.spells[index]
+				else
+					ERROR(string.format(L.INITIALIZE_PREDEFINEDIDNOTFOUND, tostring(spellSetting.id)))
+				end
+			end
+			-- SpellName
+			if spellSetting.spellID then
+				local spellName = GetSpellInfo(spellSetting.spellID)
+				spellSetting.spellName = spellName
+			end
+			-- Transforms
+			if spellSetting.transforms then
+				for buffTransformSpellID, transformSetting in pairs(spellSetting.transforms) do
+					if transformSetting.spellID then
+						local spellName = GetSpellInfo(transformSetting.spellID)
+						local buffSpellName = GetSpellInfo(buffTransformSpellID)
+						transformSetting.buffSpellName = buffSpellName
+						transformSetting.spellName = spellName
+					end
+				end
+				transformsFound = true
+			end
+			-- Buff prereq ?
+			if spellSetting.buffs then buffPrereqFound = true end
+			-- Debuff prereq ?
+			if spellSetting.debuffs then debuffPrereqFound = true end
+		end
+		-- Prereq
+		if buffPrereqFound == true then entry.hasBuffPrereq = true end
+		if debuffPrereqFound == true then entry.hasDebuffPrereq = true end
+		if transformsFound == true then entry.hasTransforms = true end
+	end
+	-- Buffs
+	if buffList then
+		-- Build buff list
+		entry.buffs = {}
+		for index, buffSpellID in ipairs(buffList) do
+			local spellName = GetSpellInfo(buffSpellID)
+			entry.buffs[index] = {spellID = buffSpellID, spellName = spellName}
+		end
+	end
+
+	-- If registering current spell list, activate it
+	if name == CurrentSpellListName then
+		return H:ActivateSpellList(name)
+	end
+	-- OK
+	return true
+end
+
+function H:ActivateSpellList(name)
+	-- Impossible while in combat
+	if InCombatLockdown() then
+		ERROR(L.SPELLLIST_INCOMBAT)
+		return false
+	end
+	CurrentSpellList = SpellListCache[name]
+-- if CurrentSpellList then
+-- print("Activating SpellList "..tostring(name))
+-- else
+-- print("No SpellList for "..tostring(name))
+-- end
+	-- Check SpellList
+	if CurrentSpellList then
+		if not CurrentSpellList.spells then
+			WARNING(L.CHECKSPELL_NOSPELLSFOUND)
+		else
+			for _, spellSetting in ipairs(CurrentSpellList.spells) do
+				if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
+					local name = GetSpellInfo(spellSetting.spellID)
+					if name then
+						WARNING(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
+					else
+						ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
+					end
+				elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
+					ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
+				end
+			end
+		end
+	end
+	-- TODO if spell list is empty, unregister SPELL_UPDATE_COOLDOWN
+
+	-- Update headers, buttons, buffs/debuffs/prereqs, CD, transforms
+	UpdateButtonHeaders()
+	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
+	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
+	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	UpdateTransforms()
+	UpdateCooldowns()
+	-- OK
+	return true
 end

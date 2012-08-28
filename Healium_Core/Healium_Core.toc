@@ -1,5 +1,5 @@
 ## Interface: 50001
-## Version: 2.6
+## Version: 3.0
 ## Author: SinaC
 ## Title: Healium Core
 ## Credits: Engypoo, Dezyne

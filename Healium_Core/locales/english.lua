@@ -1,4 +1,4 @@
-local H, C, L, oUF = unpack(select(2, ...))
+local H, C, L = unpack(select(2, ...))
 
 L.GUID_ISNIL = "Invalid GUID for unit %s"
 L.INITIALIZE_PREDEFINEDLISTNOTFOUND = "Predefined list not found"
@@ -16,3 +16,4 @@ L.BUFFDEBUFF_TOOMANYBUFF = "Too many buff for %s %s"
 L.BUFFDEBUFF_TOOMANYDEBUFF = "Too many debuff for %s %s"
 L.SETTINGS_UNKNOWNBUFFDEBUFF = "Unknown spellID %d from %s"
 L.SETTINGS_DUPLICATEBUFFDEBUFF = "SpellID %d and %d are the same buff/debuff (%s) in %s"
+L.SPELLLIST_INCOMBAT = "Impossible to register settings while in combat"

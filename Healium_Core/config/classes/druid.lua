@@ -13,31 +13,7 @@ C["DRUID"] = {
 		[9] = { spellID = 48438 }, -- Wild Growth
 		[10] = { spellID = 50464 }, -- Nourish
 		[11] = { spellID = 88423, dispels = { ["Poison"] = true, ["Curse"] = true, ["Magic"] = true } }, -- Nature's Cure
-		[12] = { spellID = 102351 }, -- Cenarion Ward [Talent]
-		[13] = { spellID = 102342 }, -- Ironbark
+		[12] = { spellID = 102342 }, -- Ironbark
+		[13] = { spellID = 102351 }, -- Cenarion Ward [Talent]
 	},
-	[3] = { -- Guardian
-		spells = {
-			{ id = 12 },
-			{ id = 2 },
-		},
-	},
-	[4] = { -- Restoration
-		buffs = {
-			102352, -- Cenarion Ward heal buff
-		},
-		spells = {
-			{ id = 1 },
-			{ id = 8 },
-			{ id = 10 },
-			{ id = 4 },
-			{ id = 5 },
-			{ id = 3 },
-			{ id = 9 },
-			{ id = 12 },
-			{ id = 13 },
-			{ id = 11 },
-			{ id = 6 },
-		},
-	}
 }

@@ -17,4 +17,5 @@ if H.client == "frFR" then
 	L.BUFFDEBUFF_TOOMANYDEBUFF = "Trop d'affaiblissements sur %s %s"
 	L.SETTINGS_UNKNOWNBUFFDEBUFF = "SpellID %d inconnu dans %s"
 	L.SETTINGS_DUPLICATEBUFFDEBUFF = "SpellID %d et %d sont le m\195\170me buff/debuff (%s) dans %s"
+	L.SPELLLIST_INCOMBAT = "Impossible de changer de settings lorsque vous \195\170tes en combat"
 end
