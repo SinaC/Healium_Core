@@ -4,6 +4,7 @@
 
 -- TODO:
 -- move filters in Tukui_Healium
+-- Enable/Disable methods: register/unregister events
 
 --local __TEST_SHIELDS = true
 
@@ -38,11 +39,11 @@ H:GetDebuff(frame, index | "FIRST" | "LAST")
 --	function to skin a debuff, parameters: frame, debuff
 -- SkinBuff [optional]
 --	function to skin a buff, parameters: frame, buff
--- AnchorButton [optional] default anchoring if not specified: right of frame
+-- AnchorButton [optional] default anchoring: right of frame
 --	function to anchor a button, parameters: frame, button, buttonList, index
--- AnchorDebuff [optional] default anchoring if not specified: right of last visible button
+-- AnchorDebuff [optional] default anchoring: right of last visible button
 --	function to anchor a debuff, parameters: frame, button, debuffList, index
--- AnchorBuff [optional] default anchoring if not specified: left of frame
+-- AnchorBuff [optional] default anchoring: left of frame
 --	function to anchor a buff, parameters: frame, button, buffList, index
 -- PriorityDebuff
 --	true if only one priority debuff instead of maxDebuffCount debuffs, false otherwise
@@ -54,15 +55,16 @@ local H, C, L = unpack(select(2,...))
 local Private = ns.Private
 local FlashFrame = H.FlashFrame
 local PerformanceCounter = H.PerformanceCounter
+local ipairs = ipairs
+local pairs = pairs
+local type = type
+local select = select
+local next = next
 
 -- Default button color
 local OriginButtonVertexColor = {1, 1, 1} -- default value
 local OriginButtonBackdropColor = {0.6, 0.6, 0.6} -- default value
 local OriginButtonBackdropBorderColor = {0.1, 0.1, 0.1} -- default value
-
--- Respec
-local ActivatePrimarySpecSpellName = GetSpellInfo(63645)
-local ActivateSecondarySpecSpellName = GetSpellInfo(63644)
 
 --
 local UpdateDelay = 0.2
@@ -115,10 +117,12 @@ local EventsHandler = CreateFrame("Frame")
 -- Aliases for Private functions
 local ERROR = Private.ERROR
 local WARNING = Private.WARNING
+local INFO = Private.INFO
 local DEBUG = Private.DEBUG
 local GetSpellBookID = Private.GetSpellBookID
 local GetSkillType = Private.GetSkillType
 local GetSpellID = Private.GetSpellID
+local IsSpellKnown = Private.IsSpellKnown
 local DeepCopy = Private.DeepCopy
 
 --[[
@@ -189,6 +193,21 @@ local function GetButtonSpellInfo(button)
 	local header = ButtonHeaders[button.hHeaderIndex]
 	if not header then return end
 	return header.hSpellID, header.hSpellName, header.hMacroName, header.hIcon, header.hOOM, header.hSpell
+end
+
+local function FormatShieldValue(value, maxValue)
+	value = value or 0
+	-- if maxValue then  -- PERCENTAGE
+		-- return string.format("%d%%", math.max(1, math.floor(100 * value / maxValue)))
+	-- else
+		if value >= 1000000 then
+			return string.format("%.1fm", value/1000000)
+		elseif value >= 1000 then
+			return string.format("%dk", value/1000)
+		else
+			return value
+		end
+	-- end
 end
 
 -------------------------------------------------------
@@ -268,7 +287,8 @@ local function ForEachUnitframeWithUnit(unit, fct, ...)
 	--PerformanceCounter:Increment(ADDON_NAME, "ForEachUnitframeWithUnit")
 	if not Unitframes then return end
 	for _, frame in ipairs(Unitframes) do
-		if frame and frame.unit == unit and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+		--if frame and frame.unit == unit and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
+		if frame and UnitIsUnit(frame.unit, unit) and frame:GetParent():IsShown() then -- frame:IsShown() is false if /reloadui
 			fct(frame, ...)
 		end
 	end
@@ -336,77 +356,21 @@ end
 -- Settings
 -------------------------------------------------------
 
---[[
--- Check spell settings
-local function CheckSpellSettings()
-	-- Check settings
-	if CurrentSpellList then
-		if not CurrentSpellList.spells then
-			WARNING(L.CHECKSPELL_NOSPELLSFOUND)
-		else
-			for _, spellSetting in ipairs(CurrentSpellList.spells) do
-				if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
-					local name = GetSpellInfo(spellSetting.spellID)
-					if name then
-						WARNING(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
-					else
-						ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
-					end
-				elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
-					WARNING(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
-				end
-			end
-		end
-	end
-end
---]]
-
--- -- TODO: remove this and add RegisterSpellList, ActivateSpellList in TukuiHealium
--- -- Get settings for current spec and assign it to CurrentSpellList (if not already set)
--- local function GetSpellListForCurrentSpec()
-	-- --CurrentSpellList = nil
-	-- -- if not C[H.myclass] then return end
-	-- -- local spec = GetSpecialization()
-	-- -- if not spec then return end
-	-- -- CurrentSpellList = C[H.myclass][spec]
-	-- local spec = GetSpecialization()
-	-- H:ActivateSpellList(spec)
--- end
-
--- Create a list with spellID and spellName from a list of spellID (+ remove duplicates)
+-- Map spellID[, priority] to [spellName] = {spellID[, priority]}
 local function CreateFilterList(list, listName)
 	local newList = {}
-	local index = 1
 	for key, value in pairs(list) do
 		local spellID = type(value) == "table" and value[1] or value
 		local priority = type(value) == "table" and value[2] or nil
 		local spellName = GetSpellInfo(spellID)
-		if spellName then
-			-- Check for duplicate
-			local j = 1
-			local found = false
-			while j < #newList do
-				if newList[j].spellName == spellName then
-					found = true
-					break
-				end
-				j = j + 1
+		-- Check if valid and not a duplicate
+		if spellName and not newList[spellName] then
+			-- Create entry in new list
+			if priority then
+				newList[spellName] = {spellID = spellID, priority = priority}
+			else
+				newList[spellName] = {spellID = spellID}
 			end
-			if not found then
-				-- Create entry in new list
-				if priority then
-					newList[index] = {spellID = spellID, spellName = spellName, priority = priority}
-				else
-					newList[index] = {spellID = spellID, spellName = spellName}
-				end
-				index = index + 1
-			-- else
-				-- -- Duplicate found
-				-- WARNING(string.format(L.SETTINGS_DUPLICATEBUFFDEBUFF, spellID, newList[j].spellID, spellName, listName))
-			end
-		--else
-			-- Unknown spell found
-			--WARNING(string.format(L.SETTINGS_UNKNOWNBUFFDEBUFF, spellID, listName))
 		end
 	end
 	return newList
@@ -442,77 +406,6 @@ local function InitializeSettings()
 			-- shieldInfo.spellName = GetSpellInfo(spellID)
 		-- end
 	-- end
-
-	-- TODO: remove following loop
-	-- Add spellName/spellIcon to spell/transform/buff list and copy predefined spells
---[[
-	if C[H.myclass] then
-		for specIndex, specSetting in pairs(C[H.myclass]) do
-			if specIndex ~= "predefined" then
-				H:RegisterSpellList(specIndex, specSetting.spells, specSetting.buffs)
-			end
---]]
---[[
-			-- spells
-			if specSetting.spells then
-				local buffPrereqFound = false
-				local debuffPrereqFound = false
-				local transformsFound = false
-				for index, spellSetting in ipairs(specSetting.spells) do
-					-- Copy predefined spell
-					if spellSetting.id then
-						if not C[H.myclass].predefined then
-							ERROR(L.INITIALIZE_PREDEFINEDLISTNOTFOUND)
-						end
-						local predefined = C[H.myclass].predefined[spellSetting.id]
-						if predefined then
-							specSetting.spells[index] = DeepCopy(predefined)
-							spellSetting = specSetting.spells[index]
-						else
-							ERROR(string.format(L.INITIALIZE_PREDEFINEDIDNOTFOUND, tostring(spellSetting.id)))
-						end
-					end
-					-- SpellName + SpellIcon
-					if spellSetting.spellID then
-						local spellName = GetSpellInfo(spellSetting.spellID)
-						spellSetting.spellName = spellName
-					end
-					-- Transforms
-					if spellSetting.transforms then
-						for buffTransformSpellID, transformSetting in pairs(spellSetting.transforms) do
-							if transformSetting.spellID then
-								local spellName = GetSpellInfo(transformSetting.spellID)
-								local buffSpellName = GetSpellInfo(buffTransformSpellID)
-								transformSetting.buffSpellName = buffSpellName
-								transformSetting.spellName = spellName
-							end
-						end
-						transformsFound = true
-					end
-					-- Buff prereq ?
-					if spellSetting.buffs then buffPrereqFound = true end
-					-- Debuff prereq ?
-					if spellSetting.debuffs then debuffPrereqFound = true end
-				end
-				-- prereq
-				if buffPrereqFound == true then specSetting.hasBuffPrereq = true end
-				if debuffPrereqFound == true then specSetting.hasDebuffPrereq = true end
-				if transformsFound == true then specSetting.hasTransforms = true end
-			end
-			-- buffs
-			if specSetting.buffs then
-				local buffs = {}
-				for index, buffSpellID in ipairs(specSetting.buffs) do
-					local spellName = GetSpellInfo(buffSpellID)
-					buffs[index] = {spellID = buffSpellID, spellName = spellName}
-				end
-				specSetting.buffs = buffs
-			end
---]]
---[[
-		end
-	end
---]]
 end
 
 -------------------------------------------------------
@@ -575,6 +468,10 @@ local function DebuffOnEnter(self)
 		end
 	end
 	GameTooltip:SetUnitDebuff(self.unit, self:GetID())
+	if IsShiftKeyDown() then
+		GameTooltip:AddLine(self.spellID and ("SpellID: "..tostring(self.spellID)) or "", 1, 1, 1, 1, 1, 1)
+		INFO("BUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
+	end
 	GameTooltip:Show()
 end
 
@@ -591,6 +488,10 @@ local function BuffOnEnter(self)
 		end
 	end
 	GameTooltip:SetUnitBuff(self.unit, self:GetID())
+	if IsShiftKeyDown() then
+		GameTooltip:AddLine(self.spellID and ("SpellID: "..tostring(self.spellID)) or "", 1, 1, 1, 1, 1, 1)
+		INFO("DEBUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
+	end
 	GameTooltip:Show()
 end
 
@@ -637,11 +538,12 @@ local function HideButtonGlow(frame, button)
 end
 
 -- Update buff icon, id, unit, ...
-local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirationTime, spellID)
+local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirationTime, spellID, spellName, displayValue)
 	-- id, unit: used by tooltip
 	buff:SetID(id)
 	buff.unit = unit
 	buff.spellID = spellID
+	buff.spellName = spellName
 	-- texture
 	if buff.icon then
 		buff.icon:SetTexture(icon)
@@ -673,16 +575,26 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 			buff.cooldown:Hide()
 		end
 	end
+	-- displayValue
+	if buff.shield then
+		if displayValue then
+			local txt = (type(displayValue) == "number") and FormatShieldValue(displayValue) or tostring(displayValue)
+			buff.shield:SetText(txt)
+			buff.shield:Show()
+--print("SHOW BUFF SHIELD: "..tostring(txt))
+		end
+	end
 	-- show
 	buff:Show()
 end
 
 -- Update debuff icon, id, unit, ...
-local function UpdateDebuff(frame, debuff, id, unit, icon, count, duration, expirationTime, debuffType, spellID)
+local function UpdateDebuff(frame, debuff, id, unit, icon, count, duration, expirationTime, debuffType, spellID, spellName)
 	-- id, unit: used by tooltip
 	debuff:SetID(id)
 	debuff.unit = unit
 	debuff.spellID = spellID
+	debuff.spellName = spellName
 	-- texture
 	if debuff.icon then
 		debuff.icon:SetTexture(icon)
@@ -828,22 +740,32 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 		for i = 1, 40, 1 do
 			-- get buff, don't filter on PLAYER because we need a full list of buff to check prereq
 			local filter = (CurrentSpellList and not CurrentSpellList.hasBuffPrereq and not CurrentSpellList.buffs) and "PLAYER|CANCELLABLE" or "CANCELLABLE" -- RAID cannot be used because Prayer of Mending buff is tagged as selfbuff :/
-			local name, _, icon, count, _, duration, expirationTime, unitCaster, _, _, spellID = UnitBuff(unit, i, filter)
+			--local name, _, icon, count, _, duration, expirationTime, unitCaster, _, _, spellID = UnitBuff(unit, i, filter)
+			local name, _, icon, count, _, duration, expirationTime, unitCaster, _, _, spellID, canApplyAura, isBossDebuff, value1, value2, value3 = UnitBuff(unit, i, filter)
 			if not name then break end
 			if not ListBuffs[i] then ListBuffs[i] = {} end
 			-- display only buff castable by player but keep whole list of buff to check prereq
 			ListBuffs[i].spellID = spellID
 			ListBuffs[i].spellName = name
 			buffCount = buffCount + 1
-			local filtered = true
+			local displayValueName = nil
+			local filtered = true -- default: filtered
 			if C.general.showBuff == true and frame.hBuffs and buffIndex <= C.general.maxBuffCount then
 				-- check buffs list
 				if CurrentSpellList and CurrentSpellList.buffs and unitCaster == "player" then
-					for index, buffSetting in pairs(CurrentSpellList.buffs) do
-						if buffSetting.spellName == name then
-							filtered = false
-							break
-						end
+					-- for index, buffSetting in pairs(CurrentSpellList.buffs) do
+						-- if buffSetting.spellName == name then
+							-- displayValueName = buffSetting.display
+							-- filtered = false
+							-- break
+						-- end
+					-- end
+					local buffSetting = CurrentSpellList.buffs[name]
+					-- .spellID, .display
+					if buffSetting then
+						displayValueName = buffSetting.display -- allows to display value1 or value2 or value3 when spell applies buff
+						filtered = false
+--print(tostring(displayValueName))
 					end
 				end
 				-- check buff castable by player
@@ -851,6 +773,8 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 					for index, buttonHeader in ipairs(ButtonHeaders) do
 						local spellName = buttonHeader.hSpellName
 						if spellName == name then
+							displayValueName = buttonHeader.hSpell.display -- allows to display value1 or value2 or value3 when spell applies buff
+--print(tostring(displayValueName))
 							filtered = false
 							break
 						elseif buttonHeader.hMacroName then
@@ -858,6 +782,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 							if macroID > 0 then
 								local spellName = GetMacroSpell(macroID)
 								if spellName == name then
+									displayValueName = buttonHeader.hSpell.display -- allows to display value1 or value2 or value3 when spell applies buff
 									filtered = false
 									break
 								end
@@ -868,7 +793,15 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if not filtered then
 					-- buff displayed
 					local buff = frame.hBuffs[buffIndex]
-					UpdateBuff(frame, buff, i, unit, icon, count, duration, expirationTime, spellID)
+					local displayValue = nil
+					if displayValueName then
+						if displayValueName == "value1" then displayValue = value1
+						elseif displayValueName == "value2" then displayValue = value2
+						elseif displayValueName == "value3" then displayValue = value3
+						end
+--print(tostring(spellID).."  "..tostring(displayValueName).."  "..tostring(displayValue).." -- "..tostring(value1).."  "..tostring(value2).."  "..tostring(value3))
+					end
+					UpdateBuff(frame, buff, i, unit, icon, count, duration, expirationTime, spellID, name, displayValue)
 					-- next buff
 					buffIndex = buffIndex + 1
 				end
@@ -929,22 +862,30 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 					filtered = true
 				elseif C.general.debuffFilter == "BLACKLIST" and C.blacklist then
 					-- blacklisted ?
-					filtered = false -- default: not filtered
-					for _, entry in ipairs(C.blacklist) do
-						if entry.spellName == name then
-							filtered = true -- found in blacklist -> filtered
-							break
-						end
-					end
+					-- filtered = false -- default: not filtered
+					-- for _, entry in ipairs(C.blacklist) do
+						-- if entry.spellName == name then
+							-- filtered = true -- found in blacklist -> filtered
+							-- break
+						-- end
+					-- end
+					filtered = false
+					if C.blacklist[name] then filtered = true end
 				elseif C.general.debuffFilter == "WHITELIST" and C.whitelist then
 					-- whitelisted ?
+					-- filtered = true -- default: filtered
+					-- for _, entry in ipairs(C.whitelist) do
+						-- if entry.spellName == name then
+							-- debuffPriority = entry.priority or 10
+							-- filtered = false -- found in whitelist -> not filtered
+							-- break
+						-- end
+					-- end
 					filtered = true -- default: filtered
-					for _, entry in ipairs(C.whitelist) do
-						if entry.spellName == name then
-							debuffPriority = entry.priority or 10
-							filtered = false -- found in whitelist -> not filtered
-							break
-						end
+					local entry = C.whitelist[name]
+					if entry then
+						filtered = false
+						debuffPriority = entry.priority or 10
 					end
 				end
 			end
@@ -953,13 +894,13 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 				if frame.hDebuffs and debuffIndex <= C.general.maxDebuffCount then
 					-- set normal debuff
 					local debuff = frame.hDebuffs[debuffIndex]
-					UpdateDebuff(frame, debuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
+					UpdateDebuff(frame, debuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID, name)
 					-- next debuff
 					debuffIndex = debuffIndex + 1
 				end
 				if frame.hPriorityDebuff and debuffPriority <= frame.hPriorityDebuff.priority then
 					-- set priority debuff if any
-					UpdateDebuff(frame, frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID)
+					UpdateDebuff(frame, frame.hPriorityDebuff, i, unit, icon, count, duration, expirationTime, debuffType, spellID, name)
 					frame.hPriorityDebuff.priority = debuffPriority
 				end
 			end
@@ -1042,15 +983,16 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 					local debuffType = debuff.type
 					local debuffName = debuff.spellName
 					if debuffType then
-						local filtered = false
-						if C.dispellable then -- check if debuff is in dispellable filter
-							for _, entry in ipairs(C.dispellable) do
-								if entry.spellName == debuffName then
-									filtered = true
-									break
-								end
-							end
-						end
+						local filtered = false -- default: not filtered
+						-- if C.dispellable then -- check if debuff is in dispellable filter
+							-- for _, entry in ipairs(C.dispellable) do
+								-- if entry.spellName == debuffName then
+									-- filtered = true
+									-- break
+								-- end
+							-- end
+						-- end
+						if C.dispellable[debuffName] then filtered = true end
 						if not filtered then
 							if C.general.playSoundOnDispel == true then playSound = true end -- play sound only if at least one debuff dispellable not filtered and option activated
 							local canDispel = type(spellSetting.dispels[debuffType]) == "function" and spellSetting.dispels[debuffType]() or spellSetting.dispels[debuffType]
@@ -1260,7 +1202,7 @@ local function UpdateTransforms()
 				end
 			end
 			if buttonHeader.hSpellID ~= transformToSpellID then
-print("UpdateTransforms 5")
+--print("UpdateTransforms 5")
 				--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonIcon by frame")
 				-- Update current spellID/spellName/icon
 				buttonHeader.hSpellID = transformToSpellID
@@ -1284,20 +1226,6 @@ end
 
 -- Apply/Update/Remove Shields
 local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
-	local function FormatShieldValue(value, maxValue)
-		value = value or 0
-		-- if maxValue then  -- PERCENTAGE
-			-- return string.format("%d%%", math.max(1, math.floor(100 * value / maxValue)))
-		-- else
-			if value >= 1000000 then
-				return string.format("%.1fm", value/1000000)
-			elseif value >= 1000 then
-				return string.format("%dk", value/1000)
-			else
-				return value
-			end
-		-- end
-	end
 	if not frame.hShields then return end
 --print("UpdateFrameUpdateShieldsOnBuffsDebuffs: shields found")
 	if frame.hBuffs then
@@ -2051,14 +1979,14 @@ local function PowerModified(self)
 	end
 end
 function EventsHandler:UNIT_POWER(unit)
-	if unit == "player" then
+	--if unit == "player" then
 		PowerModified()
-	end
+	--end
 end
 function EventsHandler:UNIT_MAXPOWER(unit)
-	if unit == "player" then
+	--if unit == "player" then
 		PowerModified()
-	end
+	--end
 end
 
 function EventsHandler:UNIT_CONNECTION(unit)
@@ -2078,22 +2006,6 @@ function EventsHandler:SPELL_ACTIVATION_OVERLAY_GLOW_HIDE(spellID)
 	RemoveGlowingSpell(spellID)
 	UpdateGlowing()
 end
-
--- -- TODO: remove this and add RegisterSpellList, ActivateSpellList in TukuiHealium
--- function EventsHandler:PLAYER_SPECIALIZATION_CHANGED(unit)
--- print("PLAYER_SPECIALIZATION_CHANGED: "..tostring(unit))
-	-- if unit ~= "player" then return end
-	-- if InCombatLockdown() then return end -- SHOULD NEVER HAPPEN
-
-	-- GetSpellListForCurrentSpec()
-	-- --CheckSpellSettings()
-	-- UpdateButtonHeaders()
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	-- ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	-- ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	-- UpdateTransforms()
-	-- UpdateCooldowns()
--- end
 
 local function OnUpdate(self, elapsed)
 	self.hTimeSinceLastUpdate = self.hTimeSinceLastUpdate + elapsed
@@ -2147,8 +2059,8 @@ end
 	EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 	EventsHandler:RegisterEvent("UNIT_AURA")
 	if C.general.showOOM == true then
-		EventsHandler:RegisterEvent("UNIT_POWER")
-		EventsHandler:RegisterEvent("UNIT_MAXPOWER")
+		EventsHandler:RegisterUnitEvent("UNIT_POWER", "player")
+		EventsHandler:RegisterUnitEvent("UNIT_MAXPOWER", "player")
 	end
 	EventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
 	EventsHandler:RegisterEvent("UNIT_CONNECTION")
@@ -2241,16 +2153,31 @@ function H:RegisterSpellList(name, spellList, buffList)
 	end
 	-- Buffs
 	if buffList then
-		-- Build buff list
+		-- Build buff list, map spellID | {spellID[, display]} to [spellName] = {spellID[, display]}
 		entry.buffs = {}
-		for index, buffSpellID in ipairs(buffList) do
+		--for index, buffSpellID in ipairs(buffList) do
+		for _, item in ipairs(buffList) do
+			local buffSpellID = nil
+			if type(item) == "number" then
+				buffSpellID = item
+			elseif type(item) == "table" then
+				buffSpellID = item.spellID
+			end
 			local spellName = GetSpellInfo(buffSpellID)
-			entry.buffs[index] = {spellID = buffSpellID, spellName = spellName}
+			--item.buffs[index] = {spellID = buffSpellID, spellName = spellName}
+			if spellName then
+				if type(item) == "table" then
+					entry.buffs[spellName] = {spellID = buffSpellID, display = item.display}
+				else
+					entry.buffs[spellName] = {spellID = buffSpellID}
+				end
+			end
 		end
 	end
 
 	-- If registering current spell list, activate it
 	if name == CurrentSpellListName then
+		CurrentSpellListName = nil
 		return H:ActivateSpellList(name)
 	end
 	-- OK
@@ -2263,6 +2190,10 @@ function H:ActivateSpellList(name)
 		ERROR(L.SPELLLIST_INCOMBAT)
 		return false
 	end
+	-- if name == CurrentSpellListName then
+		-- return false
+	-- end
+	CurrentSpellListName = name
 	CurrentSpellList = SpellListCache[name]
 -- if CurrentSpellList then
 -- print("Activating SpellList "..tostring(name))
@@ -2275,15 +2206,29 @@ function H:ActivateSpellList(name)
 			WARNING(L.CHECKSPELL_NOSPELLSFOUND)
 		else
 			for _, spellSetting in ipairs(CurrentSpellList.spells) do
-				if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
-					local name = GetSpellInfo(spellSetting.spellID)
-					if name then
-						WARNING(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
-					else
-						ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
+				-- if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
+					-- local name = GetSpellInfo(spellSetting.spellID)
+					-- if name then
+						-- WARNING(string.format(L.CHECKSPELL_SPELLNOTLEARNED, name, spellSetting.spellID))
+					-- else
+						-- ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
+					-- end
+				-- elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
+					-- ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
+				-- end
+				local isKnown, spellName = IsSpellKnown(spellSetting.spellID)
+				if name then
+					if isKnown == "FUTURESPELL" then -- Spell not yet available (not high level enough)
+						WARNING(string.format(L.CHECKSPELL_NOTYETLEARNED, spellName, spellSetting.spellID))
+					elseif isKnown == "INVALIDSPEC" then -- Spell only available in other spec
+						ERROR(string.format(L.CHECKSPELL_INVALIDSPEC, spellName, spellSetting.spellID))
+					elseif isKnown == "NOTAVAILABLE" then -- Talent not yet available (not high level enough)
+						WARNING(string.format(L.CHECKSPELL_NOTAVAILABLE, spellName, spellSetting.spellID))
+					elseif isKnown == "NOTSELECTED" then -- Talent not selected
+						WARNING(string.format(L.CHECKSPELL_NOTSELECTED, spellName, spellSetting.spellID))
 					end
-				elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
-					ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
+				else
+					ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
 				end
 			end
 		end

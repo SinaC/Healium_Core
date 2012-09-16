@@ -25,6 +25,11 @@ function Private.WARNING(...)
 	print(line)
 end
 
+function Private.INFO(...)
+	local line = "|CFFFFFFFFHealiumCore|r:" .. strjoin(" ", ...)
+	print(line)
+end
+
 local tekWarningDisplayed = false
 local tekDebugFrame = tekDebug and tekDebug:GetFrame(ADDON_NAME) -- tekDebug support
 function Private.DEBUG(lvl, ...)
@@ -73,6 +78,56 @@ function Private.GetSkillType(spellID)
 	-- skill type: "SPELL", "PETACTION", "FUTURESPELL", "FLYOUT"
 	if skillType == "SPELL" and globalSpellID == spellID then return skillType end
 	return nil
+end
+
+-- Check if spell is known
+function Private.IsSpellKnown(spellID)
+	if not spellID then return end -- Missing spellID
+	local searchedSpellName = GetSpellInfo(spellID)
+	if searchedSpellName then
+		-- Search in spellbook
+		local numSpellTabs = GetNumSpellTabs()
+		for tab = 1, numSpellTabs do
+			local _, _, offset, numSlots, _, _ = GetSpellTabInfo(tab)
+			for slot = offset + 1, offset + numSlots do
+				local spellName, _ = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
+				local slotType, slotID = GetSpellBookItemInfo(slot, BOOKTYPE_SPELL)
+				if spellName == searchedSpellName then
+					if tab == 1 or tab == 2 then -- General tab or Available spells tab
+						if slotType == "FUTURESPELL" then
+							return "FUTURESPELL", searchedSpellName -- Spell not yet available (not high level enough)
+						else
+							return "OK", searchedSpellName -- Spell known
+						end
+					else
+						return "INVALIDSPEC", searchedSpellName -- Spell only available in other spec
+					end
+				end
+			end
+		end
+		-- Search in talent tree
+		for talent = 1, MAX_NUM_TALENTS do
+			local name, _, tier, _, selected, available = GetTalentInfo(talent)
+			if name == searchedSpellName then
+				local isFree, _ = GetTalentRowSelectionInfo(tier)
+--print(tostring(name).."  "..tostring(selected).."  "..tostring(available).."  "..tostring(isFree))
+				if not available and not selected and isFree then
+					return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
+				else
+					return "NOTSELECTED", searchedSpellName -- Talent not selected
+				end
+				-- if talent is selected, it's found in previous loop on spellbook
+				-- if not available then
+					-- return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
+				-- elseif not selected then
+					-- return "NOTSELECTED", searchedSpellName -- Talent not selected
+				-- else
+					-- return "OK", searchedSpellName -- Talent selected
+				-- end
+			end
+		end
+	end
+	return "UNKNOWN" -- Inexistant or spell/talent of other classes
 end
 
 -- Duplicate any object

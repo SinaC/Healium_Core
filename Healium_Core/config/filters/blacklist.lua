@@ -15,4 +15,6 @@ C["blacklist"] = { -- see debuffFilter
 	99413,	-- Deserter
 	97821,	-- Void-Touched
 	106368,	-- Twilight Shift
+	124274,	-- Moderate Stagger
+	124275,	-- Light Stagger (Monk tank debuff)
 }
