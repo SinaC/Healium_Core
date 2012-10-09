@@ -4,14 +4,15 @@
 
 -- TODO:
 -- move filters in Tukui_Healium
--- Enable/Disable methods: register/unregister events
-
---local __TEST_SHIELDS = true
 
 -- Exported functions
 ----------------------
 -- H:Initialize(config)
 --	initialize Healium and merge config parameter with own config
+-- H:Enable()
+--	register events
+-- H:Disable()
+--	unregister events
 -- H:RegisterStyle(styleName, style)
 --	register a frame style
 -- H:RegisterFrame(frame, styleName)
@@ -69,6 +70,7 @@ local OriginButtonBackdropBorderColor = {0.1, 0.1, 0.1} -- default value
 --
 local UpdateDelay = 0.2
 local HealiumInitialized = false
+local HealiumEnabled = false
 
 local SpellListCache = {} -- List of available spellList, CurrentSpellList points to this list
 -- local CurrentSpellList = {
@@ -470,7 +472,7 @@ local function DebuffOnEnter(self)
 	GameTooltip:SetUnitDebuff(self.unit, self:GetID())
 	if IsShiftKeyDown() then
 		GameTooltip:AddLine(self.spellID and ("SpellID: "..tostring(self.spellID)) or "", 1, 1, 1, 1, 1, 1)
-		INFO("BUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
+		INFO("DEBUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
 	end
 	GameTooltip:Show()
 end
@@ -490,7 +492,7 @@ local function BuffOnEnter(self)
 	GameTooltip:SetUnitBuff(self.unit, self:GetID())
 	if IsShiftKeyDown() then
 		GameTooltip:AddLine(self.spellID and ("SpellID: "..tostring(self.spellID)) or "", 1, 1, 1, 1, 1, 1)
-		INFO("DEBUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
+		INFO("BUFF: "..tostring(self.spellName).."("..tostring(self.spellID)..")")
 	end
 	GameTooltip:Show()
 end
@@ -992,7 +994,7 @@ local function UpdateFrameBuffsDebuffsPrereqs(frame)
 								-- end
 							-- end
 						-- end
-						if C.dispellable[debuffName] then filtered = true end
+						if C.dispellable[debuffName] then filtered = true end -- check if debuff is in dispellable filter (dispellable debuff displayed but not triggering dispel highlight, dispel sound, ...)
 						if not filtered then
 							if C.general.playSoundOnDispel == true then playSound = true end -- play sound only if at least one debuff dispellable not filtered and option activated
 							local canDispel = type(spellSetting.dispels[debuffType]) == "function" and spellSetting.dispels[debuffType]() or spellSetting.dispels[debuffType]
@@ -1375,12 +1377,18 @@ local function UpdateFrameButtonsAttributes(frame)
 
 			button:SetAttribute("type", buttonHeader.hType)
 			button:SetAttribute(buttonHeader.hType, name)
+
 			button:Show()
 		else
 			button.hHeaderIndex = nil
 			button.texture:SetTexture("")
 			button:Hide()
 		end
+		button.hPrereqFailed = false
+		button.hOOM = false
+		button.hDispelHighlight = "none"
+		button.hOOR = false
+		button.hNotUsable = false
 	end
 end
 
@@ -1390,6 +1398,7 @@ local function UpdateButtonHeaders()
 	local headerIndex = 1
 	for index = 1, C.general.maxButtonCount, 1 do
 		local spellSetting = (CurrentSpellList and CurrentSpellList.spells and (index <= #CurrentSpellList.spells)) and CurrentSpellList.spells[index]
+--print("UpdateButtonHeaders INDEX:"..tostring(index).."  "..tostring(spellSetting))
 		if spellSetting then
 			local buttonHeader = nil
 			if spellSetting.spellID then
@@ -1417,6 +1426,7 @@ local function UpdateButtonHeaders()
 				end
 			end
 			if buttonHeader then -- if button header created, add it to button header list
+--print("ADD HEADER:"..tostring(headerIndex).."  "..tostring(buttonHeader.hSpellName or buttonHeader.hMacroName))
 				ButtonHeaders[headerIndex] = buttonHeader
 				headerIndex = headerIndex + 1
 			-- else
@@ -1823,35 +1833,6 @@ end
 -------------------------------------------------------
 -- Events handler
 -------------------------------------------------------
-if __TEST_SHIELDS then
-function EventsHandler:PLAYER_ENTERING_WORLD()
-	EventsHandler:UnregisterEvent("PLAYER_ENTERING_WORLD") -- fire only once
-
-	--EventsHandler:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-
-	--GetSpellListForCurrentSpec()
-	----CheckSpellSettings()
-	--UpdateButtonHeaders()
-	--ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
-	--ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
-	--ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
-	--UpdateTransforms()
-	--UpdateCooldowns()
-
-	print("__TEST_SHIELDS")
-	EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-
-	-- -- TEST
-	-- if C.general.showShields == true then
-		-- if IsValidZoneForShields() then
-			--EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
-		-- else
-			-- EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
-		-- end
-	-- end
-end
-end
-
 function EventsHandler:GROUP_ROSTER_UPDATE()
 	-- TODO: event is fired once by member -> optimize
 	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
@@ -1932,16 +1913,9 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster,
 				-- end
 			-- end
 --print(tostring(amount).."  "..tostring(overheal).."  "..tostring(absorbed).."  "..tostring(critical))
-			if __TEST_SHIELDS then
-				--print("__TEST_SHIELDS:"..tostring(amount))
-				if amount and amount > 0 then
-					ForEachUnitframeWithGUID(destGUID, action[2], amount, "HEAL")
-				end
-			else
-				if absorbed and absorbed > 0 then
+			if absorbed and absorbed > 0 then
 --print("ABSORBED  "..tostring(absorbed))
-					ForEachUnitframeWithGUID(destGUID, action[2], absorbed, "ABSORB")
-				end
+				ForEachUnitframeWithGUID(destGUID, action[2], absorbed, "ABSORB")
 			end
 		elseif action[1] == 3 then
 			-- for _, frame in ipairs(Unitframes) do
@@ -2017,6 +1991,61 @@ local function OnUpdate(self, elapsed)
 	end
 end
 
+-- OnEvent, call matching event handler
+local function OnEvent(self, event, ...)
+--INFO("Event: "..tostring(event).."  "..tostring(self[event]))
+	if self[event] then
+		self[event](self, ...)
+	else
+		ERROR("Missing event handler for "..tostring(event))
+	end
+end
+
+function H:Enable()	-- Register event handlers
+	if HealiumEnabled then return end
+	HealiumEnabled = true
+	--INFO("Enabling events handler")
+	EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+	EventsHandler:RegisterEvent("GROUP_ROSTER_UPDATE")
+	EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	EventsHandler:RegisterEvent("UNIT_AURA")
+	if C.general.showOOM == true then
+		EventsHandler:RegisterUnitEvent("UNIT_POWER", "player")
+		EventsHandler:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+	end
+	EventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
+	EventsHandler:RegisterEvent("UNIT_CONNECTION")
+	EventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
+	EventsHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
+	if C.general.showGlow == true then
+		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+	end
+	EventsHandler:SetScript("OnEvent", OnEvent)
+	EventsHandler.hTimeSinceLastUpdate = GetTime()
+	EventsHandler:SetScript("OnUpdate", OnUpdate)
+end
+
+function H:Disable()	-- Unregister event handlers
+	if not HealiumEnabled then return end
+	HealiumEnabled = false
+	--INFO("Disabling events handler")
+	EventsHandler:UnregisterEvent("GROUP_ROSTER_UPDATE")
+	EventsHandler:UnregisterEvent("SPELL_UPDATE_COOLDOWN")
+	EventsHandler:UnregisterEvent("UNIT_AURA")
+	EventsHandler:UnregisterEvent("UNIT_POWER")
+	EventsHandler:UnregisterEvent("UNIT_MAXPOWER")
+	EventsHandler:UnregisterEvent("UNIT_HEALTH_FREQUENT")
+	EventsHandler:UnregisterEvent("UNIT_CONNECTION")
+	EventsHandler:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	EventsHandler:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	EventsHandler:UnregisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+	EventsHandler:UnregisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+	EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	EventsHandler:SetScript("OnEvent", nil)
+	EventsHandler:SetScript("OnUpdate", nil)
+end
+
 -------------------------------------------------------
 -- Initialize
 -------------------------------------------------------
@@ -2050,35 +2079,32 @@ function H:Initialize(config)
 	-- Initialize settings
 	InitializeSettings()
 
-	-- Create event handler
-	EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
-if __TEST_SHIELDS then
-	EventsHandler:RegisterEvent("PLAYER_ENTERING_WORLD")
-end
-	EventsHandler:RegisterEvent("GROUP_ROSTER_UPDATE")
-	EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-	EventsHandler:RegisterEvent("UNIT_AURA")
-	if C.general.showOOM == true then
-		EventsHandler:RegisterUnitEvent("UNIT_POWER", "player")
-		EventsHandler:RegisterUnitEvent("UNIT_MAXPOWER", "player")
-	end
-	EventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
-	EventsHandler:RegisterEvent("UNIT_CONNECTION")
-	EventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
-	EventsHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
-	if C.general.showGlow == true then
-		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
-		EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
-	end
+	-- -- Create event handler
+	-- EventsHandler.hTimeSincePreviousOOMCheck = GetTime()
+	-- EventsHandler:RegisterEvent("GROUP_ROSTER_UPDATE")
+	-- EventsHandler:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	-- EventsHandler:RegisterEvent("UNIT_AURA")
+	-- if C.general.showOOM == true then
+		-- EventsHandler:RegisterUnitEvent("UNIT_POWER", "player")
+		-- EventsHandler:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+	-- end
+	-- EventsHandler:RegisterEvent("UNIT_HEALTH_FREQUENT")
+	-- EventsHandler:RegisterEvent("UNIT_CONNECTION")
+	-- EventsHandler:RegisterEvent("PLAYER_REGEN_ENABLED")
+	-- EventsHandler:RegisterEvent("PLAYER_REGEN_DISABLED")
+	-- if C.general.showGlow == true then
+		-- EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+		-- EventsHandler:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+	-- end
 
-	-- Set OnEvent handlers
-	EventsHandler:SetScript("OnEvent", function(self, event, ...)
---print("Event: "..tostring(event).."  "..tostring(self[event]))
-		self[event](self, ...)
-	end)
+	-- -- Set OnEvent handlers
+	-- EventsHandler:SetScript("OnEvent", function(self, event, ...)
+-- --print("Event: "..tostring(event).."  "..tostring(self[event]))
+		-- self[event](self, ...)
+	-- end)
 
-	EventsHandler.hTimeSinceLastUpdate = GetTime()
-	EventsHandler:SetScript("OnUpdate", OnUpdate)
+	-- EventsHandler.hTimeSinceLastUpdate = GetTime()
+	-- EventsHandler:SetScript("OnUpdate", OnUpdate)
 end
 
 -------------------------------------------------------
@@ -2099,7 +2125,66 @@ function H:RegisterSpellList(name, spellList, buffList)
 	-- Add spell list
 	SpellListCache[name] = {} -- TODO: compare with previous entry and update only different fields
 	local entry = SpellListCache[name]
-
+	if not spellList then
+		WARNING(L.CHECKSPELL_NOSPELLSFOUND)
+	else
+		entry.spells = {}
+		local buffPrereqFound = false
+		local debuffPrereqFound = false
+		local transformsFound = false
+		local index = 1
+		--for _, paramSpellSetting in pairs(spellList) do
+		--for _, paramSpellSetting in ipairs(spellList) do
+		for i = 1, C.general.maxButtonCount, 1 do
+			local paramSpellSetting = spellList[i]
+			if paramSpellSetting then
+				local spellSetting = nil -- will be assigned after copy from paramSpellSetting
+				-- Copy predefined spell
+				if paramSpellSetting.id then
+					if not C[H.myclass].predefined then
+						ERROR(L.INITIALIZE_PREDEFINEDLISTNOTFOUND)
+					end
+					local predefined = C[H.myclass].predefined[paramSpellSetting.id]
+					if predefined then
+						entry.spells[index] = DeepCopy(predefined)
+						spellSetting = entry.spells[index]
+						index = index + 1
+					else
+						ERROR(string.format(L.INITIALIZE_PREDEFINEDIDNOTFOUND, tostring(paramSpellSetting.id)))
+					end
+				else
+					entry.spells[index] = DeepCopy(paramSpellSetting)
+					spellSetting = entry.spells[index]
+					index = index + 1
+				end
+				if spellSetting then
+					-- SpellName
+					if spellSetting.spellID then
+						local spellName = GetSpellInfo(spellSetting.spellID)
+						spellSetting.spellName = spellName
+					end
+--print("RegisterSpellList:"..tostring(index).."  "..tostring(spellSetting.spellName or spellSetting.macroName))
+					-- Transforms
+					if spellSetting.transforms then
+						for buffTransformSpellID, transformSetting in pairs(spellSetting.transforms) do
+							if transformSetting.spellID then
+								local spellName = GetSpellInfo(transformSetting.spellID)
+								local buffSpellName = GetSpellInfo(buffTransformSpellID)
+								transformSetting.buffSpellName = buffSpellName
+								transformSetting.spellName = spellName
+							end
+						end
+						transformsFound = true
+					end
+					-- Buff prereq ?
+					if spellSetting.buffs then buffPrereqFound = true end
+					-- Debuff prereq ?
+					if spellSetting.debuffs then debuffPrereqFound = true end
+				end
+			end
+		end
+	end
+--[[
 	-- Spells
 	if not spellList then
 		WARNING(L.CHECKSPELL_NOSPELLSFOUND)
@@ -2110,7 +2195,9 @@ function H:RegisterSpellList(name, spellList, buffList)
 		local buffPrereqFound = false
 		local debuffPrereqFound = false
 		local transformsFound = false
-		for index, spellSetting in ipairs(entry.spells) do
+		--for index, spellSetting in ipairs(entry.spells) do
+		for index, spellSetting in pairs(entry.spells) do
+print("RegisterSpellList INDEX:"..tostring(index).."  "..tostring(spellSetting))
 			-- Copy predefined spell
 			if spellSetting.id then
 				if not C[H.myclass].predefined then
@@ -2151,6 +2238,7 @@ function H:RegisterSpellList(name, spellList, buffList)
 		if debuffPrereqFound == true then entry.hasDebuffPrereq = true end
 		if transformsFound == true then entry.hasTransforms = true end
 	end
+--]]
 	-- Buffs
 	if buffList then
 		-- Build buff list, map spellID | {spellID[, display]} to [spellName] = {spellID[, display]}
@@ -2205,7 +2293,8 @@ function H:ActivateSpellList(name)
 		if not CurrentSpellList.spells then
 			WARNING(L.CHECKSPELL_NOSPELLSFOUND)
 		else
-			for _, spellSetting in ipairs(CurrentSpellList.spells) do
+			--for _, spellSetting in ipairs(CurrentSpellList.spells) do
+			for _, spellSetting in pairs(CurrentSpellList.spells) do
 				-- if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
 					-- local name = GetSpellInfo(spellSetting.spellID)
 					-- if name then
@@ -2216,19 +2305,30 @@ function H:ActivateSpellList(name)
 				-- elseif spellSetting.macroName and GetMacroIndexByName(spellSetting.macroName) == 0 then
 					-- ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName))
 				-- end
-				local isKnown, spellName = IsSpellKnown(spellSetting.spellID)
-				if name then
-					if isKnown == "FUTURESPELL" then -- Spell not yet available (not high level enough)
-						WARNING(string.format(L.CHECKSPELL_NOTYETLEARNED, spellName, spellSetting.spellID))
-					elseif isKnown == "INVALIDSPEC" then -- Spell only available in other spec
-						ERROR(string.format(L.CHECKSPELL_INVALIDSPEC, spellName, spellSetting.spellID))
-					elseif isKnown == "NOTAVAILABLE" then -- Talent not yet available (not high level enough)
-						WARNING(string.format(L.CHECKSPELL_NOTAVAILABLE, spellName, spellSetting.spellID))
-					elseif isKnown == "NOTSELECTED" then -- Talent not selected
-						WARNING(string.format(L.CHECKSPELL_NOTSELECTED, spellName, spellSetting.spellID))
+--print("SPELLID:"..tostring(spellSetting.spellID).."  "..tostring(spellSetting.spellName))
+				if spellSetting.spellID then
+					local isKnown, spellName = IsSpellKnown(spellSetting.spellID)
+					if spellName then
+						if isKnown == "FUTURESPELL" then -- Spell not yet available (not high level enough)
+							WARNING(string.format(L.CHECKSPELL_NOTYETLEARNED, spellName, spellSetting.spellID))
+						elseif isKnown == "INVALIDSPEC" then -- Spell only available in other spec
+							ERROR(string.format(L.CHECKSPELL_INVALIDSPEC, spellName, spellSetting.spellID))
+						elseif isKnown == "NOTAVAILABLE" then -- Talent not yet available (not high level enough)
+							WARNING(string.format(L.CHECKSPELL_NOTAVAILABLE, spellName, spellSetting.spellID))
+						elseif isKnown == "NOTSELECTED" then -- Talent not selected
+							WARNING(string.format(L.CHECKSPELL_NOTSELECTED, spellName, spellSetting.spellID))
+						end
+					else
+						if spellSetting.id then -- Invalid predefined ID
+							ERROR(string.format(L.INITIALIZE_PREDEFINEDIDNOTFOUND, spellSetting.id))
+						else
+							ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID)) -- inexisting spell
+						end
 					end
-				else
-					ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID))
+				elseif spellSetting.macroName then
+					if GetMacroIndexByName(spellSetting.macroName) <= 0 then
+						ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName)) -- inexisting macro
+					end
 				end
 			end
 		end
@@ -2240,6 +2340,7 @@ function H:ActivateSpellList(name)
 	ForEachUnitframeEvenIfInvalid(UpdateFrameButtonsAttributes)
 	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
+	ForEachUnitframe(UpdateFrameButtonsColor) -- we have to refresh color, otherwise prereq failed are not updated
 	UpdateTransforms()
 	UpdateCooldowns()
 	-- OK
