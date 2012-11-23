@@ -516,6 +516,7 @@ end
 -------------------------------------------------------
 -- Shields
 -------------------------------------------------------
+--[[
 local function IsValidZoneForShields()
 	SetMapToCurrentZone()
 	local zone = GetCurrentMapAreaID()
@@ -525,6 +526,7 @@ local function IsValidZoneForShields()
 	end
 	return false
 end
+--]]
 
 -------------------------------------------------------
 -- Healium buttons/buffs/debuffs update
@@ -552,13 +554,13 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 	end
 	-- check shield
 	local shieldFound = false
-	if frame.hShields then
-		for _, shield in ipairs(frame.hShields) do
-			if shield.enabled == true and buff.spellID == shield.spellID then
-				shieldFound = true
-			end
-		end
-	end
+	-- if frame.hShields then
+		-- for _, shield in ipairs(frame.hShields) do
+			-- if shield.enabled == true and buff.spellID == shield.spellID then
+				-- shieldFound = true
+			-- end
+		-- end
+	-- end
 	-- count
 	if buff.count then
 		if count > 1 then
@@ -577,6 +579,7 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 			buff.cooldown:Hide()
 		end
 	end
+	--[[
 	-- displayValue
 	if buff.shield then
 		if displayValue then
@@ -586,6 +589,7 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 --print("SHOW BUFF SHIELD: "..tostring(txt))
 		end
 	end
+	--]]
 	-- show
 	buff:Show()
 end
@@ -603,13 +607,13 @@ local function UpdateDebuff(frame, debuff, id, unit, icon, count, duration, expi
 	end
 	-- check shield
 	local shieldFound = false
-	if frame.hShields then
-		for _, shield in ipairs(frame.hShields) do
-			if shield.enabled == true and debuff.spellID == shield.spellID then
-				shieldFound = true
-			end
-		end
-	end
+	-- if frame.hShields then
+		-- for _, shield in ipairs(frame.hShields) do
+			-- if shield.enabled == true and debuff.spellID == shield.spellID then
+				-- shieldFound = true
+			-- end
+		-- end
+	-- end
 	-- count
 	if debuff.count then
 		if count > 1 then
@@ -1227,6 +1231,7 @@ local function UpdateTransforms()
 end
 
 -- Apply/Update/Remove Shields
+--[[
 local function UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 	if not frame.hShields then return end
 --print("UpdateFrameUpdateShieldsOnBuffsDebuffs: shields found")
@@ -1335,6 +1340,7 @@ local function UpdateFrameUpdateShield(frame, amount, modifier)
 	end
 	UpdateFrameUpdateShieldsOnBuffsDebuffs(frame)
 end
+--]]
 
 -- Update healium frame debuff position, debuff must be anchored to last shown button
 local function UpdateFrameDebuffsPosition(frame)
@@ -1854,12 +1860,15 @@ function EventsHandler:PLAYER_REGEN_ENABLED()
 		UpdateTransforms()
 		UpdateCooldowns()
 	end
+--[[
 	if C.general.showShields == true then
 		EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- only in combat
 	end
+--]]
 end
 
 function EventsHandler:PLAYER_REGEN_DISABLED()
+--[[
 	if C.general.showShields == true then
 		if IsValidZoneForShields() then
 			EventsHandler:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
@@ -1867,8 +1876,10 @@ function EventsHandler:PLAYER_REGEN_DISABLED()
 			EventsHandler:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") -- TEST
 		end
 	end
+--]]
 end
 
+--[[
 -- Shield
 local ShieldActions = {
 	SPELL_AURA_APPLIED		= {1, UpdateFrameApplyShield},
@@ -1930,6 +1941,7 @@ function EventsHandler:COMBAT_LOG_EVENT_UNFILTERED(timestamp, event, hideCaster,
 		end
 	end
 end
+--]]
 
 function EventsHandler:SPELL_UPDATE_COOLDOWN()
 	UpdateCooldowns()
