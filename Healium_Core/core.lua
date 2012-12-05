@@ -122,7 +122,7 @@ local WARNING = Private.WARNING
 local INFO = Private.INFO
 local DEBUG = Private.DEBUG
 local GetSpellBookID = Private.GetSpellBookID
-local GetSkillType = Private.GetSkillType
+--local GetSkillType = Private.GetSkillType
 local GetSpellID = Private.GetSpellID
 local IsSpellKnown = Private.IsSpellKnown
 local DeepCopy = Private.DeepCopy
@@ -1184,6 +1184,7 @@ end
 
 -- For each spell, if transform setting exists, change icon according buff affected 'player'
 local function UpdateTransforms()
+--print("UpdateTransforms0:"..tostring(CurrentSpellList.hasTransforms))
 	--PerformanceCounter:Increment(ADDON_NAME, "UpdateTransforms")
 	--PerformanceCounter:Start(ADDON_NAME, "UpdateTransforms")
 	if not CurrentSpellList or not CurrentSpellList.hasTransforms then return end
@@ -1405,10 +1406,11 @@ local function UpdateButtonHeaders()
 	for index = 1, C.general.maxButtonCount, 1 do
 		local spellSetting = (CurrentSpellList and CurrentSpellList.spells and (index <= #CurrentSpellList.spells)) and CurrentSpellList.spells[index]
 --print("UpdateButtonHeaders INDEX:"..tostring(index).."  "..tostring(spellSetting))
-		if spellSetting then
+		if spellSetting and spellSetting.invalidSpell == false then
 			local buttonHeader = nil
 			if spellSetting.spellID then
-				if GetSkillType(spellSetting.spellID) then
+--print(tostring(index).."  "..tostring(spellSetting.spellID))
+				--if GetSkillType(spellSetting.spellID) then
 					buttonHeader = {}
 					buttonHeader.hSpell = spellSetting -- no need to copy
 					buttonHeader.hType = "spell"
@@ -1416,7 +1418,7 @@ local function UpdateButtonHeaders()
 					buttonHeader.hSpellID = spellSetting.spellID
 					buttonHeader.hSpellName = spellSetting.spellName
 					buttonHeader.hIcon = select(3, GetSpellInfo(spellSetting.spellID))
-				end
+				--end
 			elseif spellSetting.macroName then
 				if GetMacroIndexByName(spellSetting.macroName) > 0 then
 					buttonHeader = {}
@@ -2195,6 +2197,10 @@ function H:RegisterSpellList(name, spellList, buffList)
 				end
 			end
 		end
+		-- Prereq
+		if buffPrereqFound == true then entry.hasBuffPrereq = true end
+		if debuffPrereqFound == true then entry.hasDebuffPrereq = true end
+		if transformsFound == true then entry.hasTransforms = true end
 	end
 --[[
 	-- Spells
@@ -2307,6 +2313,7 @@ function H:ActivateSpellList(name)
 		else
 			--for _, spellSetting in ipairs(CurrentSpellList.spells) do
 			for _, spellSetting in pairs(CurrentSpellList.spells) do
+				spellSetting.invalidSpell = false
 				-- if spellSetting.spellID and not GetSkillType(spellSetting.spellID) then
 					-- local name = GetSpellInfo(spellSetting.spellID)
 					-- if name then
@@ -2320,26 +2327,34 @@ function H:ActivateSpellList(name)
 --print("SPELLID:"..tostring(spellSetting.spellID).."  "..tostring(spellSetting.spellName))
 				if spellSetting.spellID then
 					local isKnown, spellName = IsSpellKnown(spellSetting.spellID)
+--print(tostring(spellSetting.spellID).."  "..tostring(isKnown).."  "..tostring(spellName))
 					if spellName then
 						if isKnown == "FUTURESPELL" then -- Spell not yet available (not high level enough)
 							WARNING(string.format(L.CHECKSPELL_NOTYETLEARNED, spellName, spellSetting.spellID))
+							spellSetting.invalidSpell = true
 						elseif isKnown == "INVALIDSPEC" then -- Spell only available in other spec
 							ERROR(string.format(L.CHECKSPELL_INVALIDSPEC, spellName, spellSetting.spellID))
+							spellSetting.invalidSpell = true
 						elseif isKnown == "NOTAVAILABLE" then -- Talent not yet available (not high level enough)
 							WARNING(string.format(L.CHECKSPELL_NOTAVAILABLE, spellName, spellSetting.spellID))
+							spellSetting.invalidSpell = true
 						elseif isKnown == "NOTSELECTED" then -- Talent not selected
 							WARNING(string.format(L.CHECKSPELL_NOTSELECTED, spellName, spellSetting.spellID))
+							spellSetting.invalidSpell = true
 						end
 					else
 						if spellSetting.id then -- Invalid predefined ID
 							ERROR(string.format(L.INITIALIZE_PREDEFINEDIDNOTFOUND, spellSetting.id))
+							spellSetting.invalidSpell = true
 						else
 							ERROR(string.format(L.CHECKSPELL_SPELLNOTEXISTS, spellSetting.spellID)) -- inexisting spell
+							spellSetting.invalidSpell = true
 						end
 					end
 				elseif spellSetting.macroName then
 					if GetMacroIndexByName(spellSetting.macroName) <= 0 then
 						ERROR(string.format(L.CHECKSPELL_MACRONOTFOUND, spellSetting.macroName)) -- inexisting macro
+						spellSetting.invalidSpell = true
 					end
 				end
 			end

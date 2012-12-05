@@ -70,15 +70,18 @@ function Private.GetSpellBookID(spellName)
 	return nil
 end
 
+--[[
 -- Get skill type (SPELL, PETACTION, FUTURESPELL, FLYOUT)
 function Private.GetSkillType(spellID)
 	local spellName = GetSpellInfo(spellID)
 	if not spellName then return nil end
 	local skillType, globalSpellID = GetSpellBookItemInfo(spellName)
+--print(tostring(spellID).."  "..tostring(spellName).."  "..tostring(skillType).."  "..tostring(globalSpellID))
 	-- skill type: "SPELL", "PETACTION", "FUTURESPELL", "FLYOUT"
 	if skillType == "SPELL" and globalSpellID == spellID then return skillType end
 	return nil
 end
+--]]
 
 -- Check if spell is known
 function Private.IsSpellKnown(spellID)
@@ -91,7 +94,7 @@ function Private.IsSpellKnown(spellID)
 			local _, _, offset, numSlots, _, _ = GetSpellTabInfo(tab)
 			for slot = offset + 1, offset + numSlots do
 				local spellName, _ = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
-				local slotType, slotID = GetSpellBookItemInfo(slot, BOOKTYPE_SPELL)
+				local slotType, globalSpellID = GetSpellBookItemInfo(slot, BOOKTYPE_SPELL)
 				if spellName == searchedSpellName then
 					if tab == 1 or tab == 2 then -- General tab or Available spells tab
 						if slotType == "FUTURESPELL" then
