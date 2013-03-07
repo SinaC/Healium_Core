@@ -1,5 +1,5 @@
 ## Interface: 50200
-## Version: 3.2.1
+## Version: 3.2.2
 ## Author: SinaC
 ## Title: Healium Core
 ## Credits: Engypoo, Dezyne

@@ -19,5 +19,6 @@ C["PALADIN"] = {
 		[15] = { spellID = 114039 }, -- Hand of Purity
 		[16] = { spellID = 114157 }, -- Execution Sentence
 		[17] = { spellID = 114165 }, -- Holy Prism
+		[18] = { spellID = 114163 }, -- Eternal Flame
 	},
 }
