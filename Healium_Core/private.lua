@@ -108,27 +108,48 @@ function Private.IsSpellKnown(spellID)
 				end
 			end
 		end
+-- TODO:
 		-- Search in talent tree
-		for talent = 1, MAX_NUM_TALENTS do
-			local name, _, tier, _, selected, available = GetTalentInfo(talent)
-			if name == searchedSpellName then
-				local isFree, _ = GetTalentRowSelectionInfo(tier)
+		local activeTalentGroup = GetActiveSpecGroup(false)
+--print("activeTalentGroup:"..activeTalentGroup)
+--print("spellId: "..spellID.." spellName:"..searchedSpellName)
+		for tier = 1, 7 do
+			for column = 1, 3 do
+				local talentId, name, _, selected, available = GetTalentInfo(tier, column, activeTalentGroup)
+ --print("talentId:"..talentId.." name:"..name.." selected:"..((selected == true) and "true" or "false").." available:"..((available == true) and "true" or "false"))
+				if name == searchedSpellName then
+					local isFree, _ = GetTalentRowSelectionInfo(tier)
 --print(tostring(name).."  "..tostring(selected).."  "..tostring(available).."  "..tostring(isFree))
-				if not available and not selected and isFree then
-					return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
-				else
-					return "NOTSELECTED", searchedSpellName -- Talent not selected
+					if not available and not selected and isFree then
+						return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
+					else
+						return "NOTSELECTED", searchedSpellName -- Talent not selected
+					end
 				end
-				-- if talent is selected, it's found in previous loop on spellbook
-				-- if not available then
-					-- return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
-				-- elseif not selected then
-					-- return "NOTSELECTED", searchedSpellName -- Talent not selected
-				-- else
-					-- return "OK", searchedSpellName -- Talent selected
-				-- end
 			end
 		end
+		--local talentId, name, _, selected, available = GetTalentInfo 
+
+--		for talent = 1, MAX_NUM_TALENTS do
+--			local name, _, tier, _, selected, available = GetTalentInfo(talent)
+--			if name == searchedSpellName then
+--				local isFree, _ = GetTalentRowSelectionInfo(tier)
+----print(tostring(name).."  "..tostring(selected).."  "..tostring(available).."  "..tostring(isFree))
+--				if not available and not selected and isFree then
+--					return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
+--				else
+--					return "NOTSELECTED", searchedSpellName -- Talent not selected
+--				end
+--				-- if talent is selected, it's found in previous loop on spellbook
+--				-- if not available then
+--					-- return "NOTAVAILABLE", searchedSpellName -- Talent not yet available (not high level enough)
+--				-- elseif not selected then
+--					-- return "NOTSELECTED", searchedSpellName -- Talent not selected
+--				-- else
+--					-- return "OK", searchedSpellName -- Talent selected
+--				-- end
+--			end
+--		end
 	end
 	return "UNKNOWN" -- Inexistant or spell/talent of other classes
 end

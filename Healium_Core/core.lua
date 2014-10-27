@@ -574,7 +574,9 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 	if buff.cooldown then
 		if not shieldFound and duration and duration > 0 then
 			local startTime = expirationTime - duration
-			buff.cooldown:SetCooldown(startTime, duration)
+			--buff.cooldown:SetCooldown(startTime, duration)
+			CooldownFrame_SetTimer(buff.cooldown, startTime, duration, true)
+			buff.cooldown:Show()
 		else
 			buff.cooldown:Hide()
 		end
@@ -586,7 +588,7 @@ local function UpdateBuff(frame, buff, id, unit, icon, count, duration, expirati
 			local txt = (type(displayValue) == "number") and FormatShieldValue(displayValue) or tostring(displayValue)
 			buff.shield:SetText(txt)
 			buff.shield:Show()
---print("SHOW BUFF SHIELD: "..tostring(txt))
+print("SHOW BUFF SHIELD: "..tostring(txt))
 		end
 	end
 	--]]
@@ -627,7 +629,8 @@ local function UpdateDebuff(frame, debuff, id, unit, icon, count, duration, expi
 	if debuff.cooldown then
 		if not shieldFound and duration and duration > 0 then
 			local startTime = expirationTime - duration
-			debuff.cooldown:SetCooldown(startTime, duration)
+			--debuff.cooldown:SetCooldown(startTime, duration)
+			CooldownFrame_SetTimer(debuff.cooldown, startTime, duration, true)
 			debuff.cooldown:Show()
 		else
 			debuff.cooldown:Hide()
@@ -704,9 +707,15 @@ local function UpdateButtonOOR(frame, button, spellName)
 end
 
 -- Update button cooldown
-local function UpdateButtonCooldown(frame, button, start, duration, enabled)
-	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonCooldown")
-	CooldownFrame_SetTimer(button.cooldown, start, duration, enabled)
+local function UpdateButtonCooldownAndCharges(frame, button, start, duration, enabled, currentCharges, maxCharges)
+	--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonCooldownAndCharges")
+	CooldownFrame_SetTimer(button.cooldown, start, duration, enabled, currentCharges, maxCharges)
+	if (button.charges and maxCharges and maxCharges > 1) then
+		button.charges:SetText(currentCharges)
+		button.charges:Show()
+	else
+		button.charges:Hide()
+	end
 end
 
 -- Update frame buttons color
@@ -1097,13 +1106,24 @@ local function UpdateGlowing()
 	end
 end
 
--- For each spell, get cooldown then loop among Healium Unitframes and set cooldown
-local CacheCD = {} -- keep a list of CD between calls, if CD information are the same, no need to update buttons
-local function UpdateCooldownByHeader(index, buttonHeader)
+-- For each spell, get cooldown/charges then loop among Healium Unitframes and set cooldown
+local CacheCD = {} -- keep a list of CD infos between calls, if CD information are the same, no need to update buttons
+local function UpdateCooldownAndChargesByHeader(index, buttonHeader)
 	local start, duration, enabled
+	local currentCharges, maxCharges
 	if buttonHeader.hSpellID then
-		start, duration, enabled = GetSpellCooldown(buttonHeader.hSpellID)
-	elseif buttonHeader.hMacroName then
+		local cooldownStart, cooldownDuration
+		currentCharges, maxCharges, cooldownStart, cooldownDuration = GetSpellCharges(buttonHeader.hSpellID)
+		if (currentCharges and maxCharges and cooldownStart and cooldownDuration and currentCharges < maxCharges and maxCharges > 1) then
+			--http://wowpedia.org/API_GetSpellCharges
+--print("UpdateCooldownAndChargesByHeader1:"..(buttonHeader.hSpellID or "???").." "..(buttonHeader.hSpellName or "???").." "..(currentCharges or "?").." "..(maxCharges or "?").." "..(cooldownStart or "?").." "..(cooldownDuration or "?"))
+			start = cooldownStart-- / GetTime()
+			duration = cooldownDuration
+			enabled = 1
+		else
+			start, duration, enabled = GetSpellCooldown(buttonHeader.hSpellID)
+		end
+	elseif buttonHeader.hMacroName then -- TODO: when macro has a keyboard:modifier  cd should only be called when modifier is pressed
 		local name = GetMacroSpell(buttonHeader.hMacroName)
 		if name then
 			start, duration, enabled = GetSpellCooldown(name)
@@ -1112,25 +1132,27 @@ local function UpdateCooldownByHeader(index, buttonHeader)
 		end
 	end
 	local arrayEntry = CacheCD[index]
-	if not arrayEntry or arrayEntry.start ~= start or arrayEntry.duration ~= duration then
-		--PerformanceCounter:Increment(ADDON_NAME, "UpdateButtonCooldown by frame")
+	if not arrayEntry or arrayEntry.start ~= start or arrayEntry.duration ~= duration or arrayEntry.currentCharges ~= currentCharges then
+--print("UpdateCooldownAndChargesByHeader2:"..(buttonHeader.hSpellName or buttonHeader.hMacroName or "???").." "..(start or "?").." "..(duration or "?").." "..(enabled or "?"))
+		--PerformanceCounter:Increment(ADDON_NAME, "UpdateCooldownAndChargesByHeader by frame")
 		-- Update buttons
-		ForEachUnitframeButton(index, UpdateButtonCooldown, start, duration, enabled)
+		ForEachUnitframeButton(index, UpdateButtonCooldownAndCharges, start, duration, enabled, currentCharges, maxCharges)
 		-- Update cache
 		if not CacheCD[index] then CacheCD[index] = {} end
 		CacheCD[index].start = start
 		CacheCD[index].duration = duration
+		CacheCD[index].currentCharges = currentCharges
 	-- else
-		-- PerformanceCounter:Increment(ADDON_NAME, "SKIP UpdateButtonCooldown by frame")
+		-- PerformanceCounter:Increment(ADDON_NAME, "SKIP UpdateCooldownAndChargesByHeader by frame")
 	end
 end
-local function UpdateCooldowns()
-	--PerformanceCounter:Increment(ADDON_NAME, "UpdateCooldowns")
-	--PerformanceCounter:Start(ADDON_NAME, "UpdateCooldowns")
+local function UpdateCooldownsAndCharges()
+	--PerformanceCounter:Increment(ADDON_NAME, "UpdateCooldownsAndCharges")
+	--PerformanceCounter:Start(ADDON_NAME, "UpdateCooldownsAndCharges")
 	for index, buttonHeader in ipairs(ButtonHeaders) do
-		UpdateCooldownByHeader(index, buttonHeader)
+		UpdateCooldownAndChargesByHeader(index, buttonHeader)
 	end
-	--PerformanceCounter:Stop(ADDON_NAME, "UpdateCooldowns")
+	--PerformanceCounter:Stop(ADDON_NAME, "UpdateCooldownsAndCharges")
 end
 
 -- Check OOM spells
@@ -1218,7 +1240,7 @@ local function UpdateTransforms()
 				-- Update buttons
 				ForEachUnitframeButton(index, UpdateButtonIcon, buttonHeader)
 				-- Update CD
-				UpdateCooldownByHeader(index, buttonHeader)
+				UpdateCooldownAndChargesByHeader(index, buttonHeader)
 				-- Update glow
 				UpdateGlowingByHeader(index, buttonHeader)
 				-- Update OOM
@@ -1487,6 +1509,10 @@ local function CreateHealiumButtons(frame)
 		button.texture:SetAllPoints(button)
 		button.cooldown = CreateFrame("Cooldown", "$parentCD", button, "CooldownFrameTemplate")
 		button.cooldown:SetAllPoints(button.texture)
+		button.charges = button:CreateFontString("$parentCount", "OVERLAY")
+		button.charges:SetFontObject(NumberFontNormal)
+		button.charges:SetPoint("BOTTOMRIGHT", 1, -1)
+		button.charges:SetJustifyH("CENTER")
 --print("CreateHealiumButtons "..i.."  2")
 		-- skin
 		if style.SkinButton then style.SkinButton(frame, button) end
@@ -1847,7 +1873,7 @@ function EventsHandler:GROUP_ROSTER_UPDATE()
 	ForEachUnitframeEvenIfInvalid(UpdateFrameDebuffsPosition)
 	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 	UpdateTransforms()
-	UpdateCooldowns()
+	UpdateCooldownsAndCharges()
 end
 -- end
 
@@ -1860,7 +1886,7 @@ function EventsHandler:PLAYER_REGEN_ENABLED()
 		ForEachUnitframe(UpdateFrameDebuffsPosition)
 		ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 		UpdateTransforms()
-		UpdateCooldowns()
+		UpdateCooldownsAndCharges()
 	end
 --[[
 	if C.general.showShields == true then
@@ -1946,7 +1972,7 @@ end
 --]]
 
 function EventsHandler:SPELL_UPDATE_COOLDOWN()
-	UpdateCooldowns()
+	UpdateCooldownsAndCharges()
 end
 
 function EventsHandler:UNIT_AURA(unit)
@@ -2369,7 +2395,7 @@ function H:ActivateSpellList(name)
 	ForEachUnitframe(UpdateFrameBuffsDebuffsPrereqs)
 	ForEachUnitframe(UpdateFrameButtonsColor) -- we have to refresh color, otherwise prereq failed are not updated
 	UpdateTransforms()
-	UpdateCooldowns()
+	UpdateCooldownsAndCharges()
 	-- OK
 	return true
 end

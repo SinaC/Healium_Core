@@ -3,7 +3,7 @@ local H, C, L = unpack(select(2,...))
 C["PALADIN"] = {
 	predefined = {
 		[1] = { spellID = 633, debuffs = { 25771 } }, -- Lay on Hands (not if affected by Forbearance)
-		[2] = { spellID = 635 }, -- Holy Light
+		[2] = { spellID = 82326 }, -- Holy Light
 		[3] = { spellID = 1022, debuffs = { 25771 } }, -- Hand of Protection (not if affected by Forbearance)
 		[4] = { spellID = 1038 }, -- Hand of Salvation
 		[5] = { spellID = 1044 }, -- Hand of Freedom

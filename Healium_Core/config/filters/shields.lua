@@ -9,6 +9,10 @@ C["shields"] = {
 	[109363] = {type = "DEBUFF", modifier = "ABSORB", amount = 280000, map = 824}, -- Searing Plasma (Spine of Deathwing 10H)
 	[109364] = {type = "DEBUFF", modifier = "ABSORB", amount = 420000, map = 824}, -- Searing Plasma (Spine of Deathwing 25H)
 
+	[142863] = {type = "DEBUFF", modifier = "ABSORB", map = 953}, -- Ancient Barrier (Siege of Orgrimmar)
+	[142864] = {type = "DEBUFF", modifier = "ABSORB", map = 953}, -- Ancient Barrier (Siege of Orgrimmar)
+	[142865] = {type = "DEBUFF", modifier = "ABSORB", map = 953}, -- Ancient Barrier (Siege of Orgrimmar)
+
 	-- TEST
 	--[974] = {type = "BUFF", modifier = "HEAL", amount = 1200000 }, -- Earth Shield
 	--[48438] = {type = "BUFF", modifier = "HEAL", amount = 100000 }, -- Wild Growth

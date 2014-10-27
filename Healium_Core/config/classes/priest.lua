@@ -2,12 +2,12 @@ local H, C, L = unpack(select(2,...))
 
 C["PRIEST"] = {
 	predefined = {
-		[1] = { spellID = 17, debuffs = { 6788 }, display = "value1" }, -- Power Word: Shield not castable if affected by Weakened Soul (6788) TODO: except if caster is affected by Divine Insight
+		[1] = { spellID = 17, debuffs = { 6788 }, display = "value2" }, -- Power Word: Shield not castable if affected by Weakened Soul (6788) TODO: except if caster is affected by Divine Insight
 		[2] = { spellID = 139 }, -- Renew
 		[3] = { spellID = 527, dispels = { ["Magic"] = true, ["Disease"] = true } }, -- Purify
 		[4] = { spellID = 596 }, -- Prayer of Healing
 		[5] = { spellID = 1706 }, -- Levitate
-		[6] = { spellID = 2050 }, -- Heal
+		[6] = { spellID = 2061 }, -- Heal
 		[7] = { spellID = 2060 }, -- Greater Heal
 		[8] = { spellID = 2061 }, -- Flash Heal
 		[9] = { spellID = 6346 }, -- Fear Ward
