@@ -662,6 +662,8 @@ local function UpdateButtonColor(frame, button)
 	--local invalid, _, _, _, _, OOM, spellSetting = GetButtonSpellInfo(button)
 	local _, _, _, _, OOM, spellSetting = GetButtonSpellInfo(button)
 
+	--TODO: macro
+
 	if frame.hDisabled and (not UnitIsConnected(unit) or not spellSetting or ((not spellSetting.rez or spellSetting.rez == false) and UnitIsDeadOrGhost(unit))) then
 		-- not (rez and unit is dead) -> color in red
 		button.texture:SetVertexColor(unpack(C.colors.unitDead))
